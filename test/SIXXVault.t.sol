@@ -164,7 +164,11 @@ contract SIXXVaultTest is Test {
 
         vm.startPrank(alice);
         usdc.approve(address(vault), 1_000 * USDC_6);
-        vm.expectRevert("VAULT: emergency shutdown");
+        // OZ v5: maxDeposit() returns 0 on shutdown → ERC4626ExceededMaxDeposit is thrown first
+        vm.expectRevert(abi.encodeWithSelector(
+            bytes4(keccak256("ERC4626ExceededMaxDeposit(address,uint256,uint256)")),
+            alice, uint256(1_000 * USDC_6), uint256(0)
+        ));
         vault.deposit(1_000 * USDC_6, alice);
         vm.stopPrank();
     }
@@ -268,7 +272,7 @@ contract SIXXVaultTest is Test {
         vm.prank(governance);
         vault.setManagementFee(100); // 100 BPS = 1%
 
-        uint256 amount = 100_000 * USDC_6;
+        uint256 amount = 10_000 * USDC_6;
         vm.startPrank(alice);
         usdc.approve(address(vault), amount);
         vault.deposit(amount, alice);
@@ -283,9 +287,9 @@ contract SIXXVaultTest is Test {
         uint256 feeSharesAfter = vault.balanceOf(feeRcpt);
         assertGt(feeSharesAfter, feeSharesBefore, "Fee shares minted");
 
-        // ~1% of 100k USDC = ~1000 USDC worth of shares
+        // ~1% of 10k USDC = ~100 USDC worth of shares
         uint256 feeAssets = vault.convertToAssets(feeSharesAfter - feeSharesBefore);
-        assertApproxEqRel(feeAssets, 1_000 * USDC_6, 0.01e18, "Fee ~1% of assets");
+        assertApproxEqRel(feeAssets, 100 * USDC_6, 0.01e18, "Fee ~1% of assets");
     }
 
     // ─────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ISIXXVault} from "../interfaces/ISIXXVault.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IStrategyAdapter} from "../interfaces/IStrategyAdapter.sol";
 
 /// @title SIXXVault
@@ -90,25 +91,25 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // =========================================
 
     function deposit(uint256 assets, address receiver)
-        public override(ERC4626, ISIXXVault) nonReentrant returns (uint256)
+        public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         return super.deposit(assets, receiver);
     }
 
     function mint(uint256 shares, address receiver)
-        public override nonReentrant returns (uint256)
+        public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         return super.mint(shares, receiver);
     }
 
     function withdraw(uint256 assets, address receiver, address owner)
-        public override(ERC4626, ISIXXVault) nonReentrant returns (uint256)
+        public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         return super.withdraw(assets, receiver, owner);
     }
 
     function redeem(uint256 shares, address receiver, address owner)
-        public override nonReentrant returns (uint256)
+        public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         return super.redeem(shares, receiver, owner);
     }
@@ -118,7 +119,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // =========================================
 
     /// @notice Vault balance + assets deployed to adapter
-    function totalAssets() public view override(ERC4626, ISIXXVault) returns (uint256) {
+    function totalAssets() public view override(ERC4626, IERC4626) returns (uint256) {
         uint256 adapterAssets = activeAdapter != address(0)
             ? IStrategyAdapter(activeAdapter).totalAssets()
             : 0;
@@ -129,12 +130,12 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // ERC-4626: maxDeposit / maxMint
     // =========================================
 
-    function maxDeposit(address) public view override returns (uint256) {
+    function maxDeposit(address) public view override(ERC4626, IERC4626) returns (uint256) {
         if (emergencyShutdown) return 0;
         return type(uint256).max;
     }
 
-    function maxMint(address) public view override returns (uint256) {
+    function maxMint(address) public view override(ERC4626, IERC4626) returns (uint256) {
         if (emergencyShutdown) return 0;
         return type(uint256).max;
     }

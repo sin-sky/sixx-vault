@@ -154,8 +154,10 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         require(!emergencyShutdown, "VAULT: emergency shutdown");
         super._deposit(caller, receiver, assets, shares);
 
-        // Extend lock for receiver (never shorten existing lock)
-        if (lockPeriod > 0) {
+        // H-3: Only extend the receiver's lock when they deposit for themselves.
+        //      Prevents a griefer from depositing on behalf of a victim to
+        //      re-extend that victim's lock and freeze their funds.
+        if (lockPeriod > 0 && caller == receiver) {
             uint256 newLock = block.timestamp + lockPeriod;
             if (newLock > _lockedUntil[receiver]) {
                 _lockedUntil[receiver] = newLock;

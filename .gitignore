@@ -1,0 +1,16 @@
+# Environment variables (NEVER commit)
+.env
+.env.local
+*.env
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+# Foundry
+cache/
+out/
+
+# OS
+.DS_Store

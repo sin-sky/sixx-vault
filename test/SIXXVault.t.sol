@@ -129,8 +129,11 @@ contract SIXXVaultTest is Test {
         usdc.approve(address(vault), amount);
         uint256 shares = vault.deposit(amount, alice);
 
-        // Immediate withdrawal should revert
-        vm.expectRevert("VAULT: still locked");
+        // H-4: maxRedeem returns 0 while locked → OZ's outer guard fires first
+        vm.expectRevert(abi.encodeWithSelector(
+            bytes4(keccak256("ERC4626ExceededMaxRedeem(address,uint256,uint256)")),
+            alice, shares, uint256(0)
+        ));
         vault.redeem(shares, alice, alice);
         vm.stopPrank();
     }

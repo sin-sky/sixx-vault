@@ -141,6 +141,18 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         return type(uint256).max;
     }
 
+    /// @dev H-4: Surface the lock state through the ERC-4626 max* views so that
+    ///      integrators and previews see 0 capacity while the owner is locked.
+    function maxWithdraw(address owner) public view override(ERC4626, IERC4626) returns (uint256) {
+        if (_lockedUntil[owner] > block.timestamp) return 0;
+        return super.maxWithdraw(owner);
+    }
+
+    function maxRedeem(address owner) public view override(ERC4626, IERC4626) returns (uint256) {
+        if (_lockedUntil[owner] > block.timestamp) return 0;
+        return super.maxRedeem(owner);
+    }
+
     // =========================================
     // ERC-4626: Internal hooks
     // =========================================

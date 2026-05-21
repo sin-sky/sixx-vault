@@ -178,6 +178,16 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         super._withdraw(caller, receiver, owner, assets, shares);
     }
 
+    /// @dev H-2: Block share transfers between users while sender is locked.
+    ///      Mints (from == 0) and burns (to == 0) are exempt; the burn path is
+    ///      already gated by _withdraw's lock check.
+    function _update(address from, address to, uint256 value) internal override {
+        if (from != address(0) && to != address(0)) {
+            require(block.timestamp >= _lockedUntil[from], "VAULT: still locked");
+        }
+        super._update(from, to, value);
+    }
+
     // =========================================
     // Internal: Adapter I/O
     // =========================================

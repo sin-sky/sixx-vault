@@ -9,6 +9,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {ISIXXVault} from "../interfaces/ISIXXVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IStrategyAdapter} from "../interfaces/IStrategyAdapter.sol";
+import {IAdapterRegistry} from "../interfaces/IAdapterRegistry.sol";
 
 /// @title SIXXVault
 /// @notice ERC-4626 compliant tokenized vault with pluggable yield strategy adapters.
@@ -214,6 +215,15 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     /// @dev Recalls 100% of assets from old adapter first.
     ///      Deploys to new adapter immediately after switch.
     function setAdapter(address newAdapter) external override onlyGovernance {
+        // H-1: Enforce registry whitelist when a registry is configured.
+        //      address(0) is allowed (pauses the strategy) and bypasses the check.
+        if (newAdapter != address(0) && adapterRegistry != address(0)) {
+            require(
+                IAdapterRegistry(adapterRegistry).isActive(newAdapter),
+                "VAULT: adapter not whitelisted"
+            );
+        }
+
         // Recall everything from current adapter
         if (activeAdapter != address(0)) {
             uint256 adapterBal = IStrategyAdapter(activeAdapter).totalAssets();

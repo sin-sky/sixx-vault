@@ -315,8 +315,12 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
         // Pro-rated management fee
         uint256 feeAssets = (assets * managementFee * elapsed) / (MAX_BPS * SECS_PER_YEAR);
-        if (feeAssets > 0) {
-            feeShares = previewDeposit(feeAssets);
+        if (feeAssets > 0 && feeAssets < assets) {
+            // M-1: feeAssets is already part of totalAssets() (accrued yield
+            //      already in the vault), so previewDeposit would under-mint.
+            //      Use the dilution formula so that after minting, feeRecipient
+            //      owns exactly feeAssets worth of the existing pool.
+            feeShares = (feeAssets * supply) / (assets - feeAssets);
             if (feeShares > 0) {
                 _mint(feeRecipient, feeShares);
                 emit FeeCollected(feeRecipient, feeShares, feeAssets);

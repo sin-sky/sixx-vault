@@ -319,4 +319,190 @@ contract SIXXVaultTest is Test {
 
         assertEq(vault.maxDeposit(alice), 0);
     }
+
+    // ─────────────────────────────────────────────────────────
+    // Audit Regression Tests (AUDIT_FIXPLAN)
+    // ─────────────────────────────────────────────────────────
+
+    /// @dev H-2: share transfers must revert while the sender is locked,
+    ///      otherwise users could move shares to a fresh address and
+    ///      bypass the lock by redeeming there.
+    function test_lockBypassViaTransfer() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+
+        vm.expectRevert("VAULT: still locked");
+        vault.transfer(bob, shares);
+        vm.stopPrank();
+
+        // After the lock expires, the same transfer succeeds.
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(alice);
+        vault.transfer(bob, shares);
+        assertEq(vault.balanceOf(bob), shares, "transfer ok after lock expires");
+    }
+
+    /// @dev H-3: a third party must NOT be able to extend someone else's
+    ///      lock by depositing on their behalf — otherwise an attacker
+    ///      could grief a victim by perpetually re-locking their funds.
+    function test_lockGriefingByAttacker() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+        uint256 originalLock = vault.lockedUntil(alice);
+
+        // 6 days in, the attacker (bob) deposits with receiver = alice.
+        vm.warp(block.timestamp + 6 days);
+        vm.startPrank(bob);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // caller != receiver
+        vm.stopPrank();
+
+        assertEq(
+            vault.lockedUntil(alice),
+            originalLock,
+            "attacker must not be able to extend victim's lock"
+        );
+
+        // And alice can withdraw at the originally-scheduled time.
+        vm.warp(originalLock + 1);
+        uint256 aliceShares = vault.balanceOf(alice);
+        vm.prank(alice);
+        vault.redeem(aliceShares, alice, alice);
+    }
+
+    /// @dev H-4: maxWithdraw / maxRedeem must surface the lock state so
+    ///      integrators and ERC-4626 previews see 0 capacity while the
+    ///      owner is locked (and recover once the lock expires).
+    function test_maxWithdraw_returnsZeroWhenLocked() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        assertEq(vault.maxWithdraw(alice), 0, "maxWithdraw == 0 while locked");
+        assertEq(vault.maxRedeem(alice),   0, "maxRedeem == 0 while locked");
+
+        vm.warp(block.timestamp + 7 days + 1);
+
+        assertGt(vault.maxWithdraw(alice), 0, "maxWithdraw recovers after lock");
+        assertGt(vault.maxRedeem(alice),   0, "maxRedeem recovers after lock");
+    }
+
+    /// @dev H-1: setAdapter must reject any adapter not whitelisted in
+    ///      the AdapterRegistry. address(0) remains valid as the
+    ///      explicit "pause strategy" path.
+    function test_setAdapter_rejectsUnregisteredAdapter() public {
+        MockAdapter rogue = new MockAdapter(address(usdc), address(vault));
+        // intentionally NOT registered
+
+        vm.prank(governance);
+        vm.expectRevert("VAULT: adapter not whitelisted");
+        vault.setAdapter(address(rogue));
+
+        // Sanity: address(0) still works (pause strategy).
+        vm.prank(governance);
+        vault.setAdapter(address(0));
+        assertEq(vault.activeAdapter(), address(0));
+    }
+
+    /// @dev M-1: collectFees must use the dilution formula
+    ///        feeShares = feeAssets * supply / (assets - feeAssets)
+    ///      so that, AFTER minting, the fee recipient owns exactly
+    ///      feeAssets worth of the existing pool. The previous (buggy)
+    ///      implementation used previewDeposit, which under-mints
+    ///      because feeAssets is already part of totalAssets().
+    function test_collectFees_dilutionMath() public {
+        vm.prank(governance);
+        vault.setManagementFee(100); // 1% per year
+
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        uint256 assetsBefore = vault.totalAssets();
+        uint256 supplyBefore = vault.totalSupply();
+
+        // Advance exactly one SECS_PER_YEAR (per SIXXVault.sol).
+        vm.warp(block.timestamp + 365 days + 6 hours);
+        vault.collectFees();
+
+        uint256 feeShares = vault.balanceOf(feeRcpt);
+
+        // The contract's feeAssets simplifies to assets * mgmtFee / MAX_BPS
+        // because elapsed == SECS_PER_YEAR cancels exactly.
+        uint256 expectedFeeAssets  = (assetsBefore * 100) / 10_000;
+        uint256 expectedFeeShares  =
+            (expectedFeeAssets * supplyBefore) / (assetsBefore - expectedFeeAssets);
+
+        assertEq(
+            feeShares,
+            expectedFeeShares,
+            "feeShares must follow the dilution formula, not previewDeposit"
+        );
+
+        // Reject the previewDeposit shape (feeAssets * supply / assets),
+        // which would always be strictly smaller than the correct value.
+        uint256 buggyFeeShares = (expectedFeeAssets * supplyBefore) / assetsBefore;
+        assertGt(
+            feeShares,
+            buggyFeeShares,
+            "dilution formula must over-mint vs the buggy previewDeposit shape"
+        );
+
+        // After minting, the fee recipient's stake value should equal
+        // exactly feeAssets (within OZ virtual-shares rounding).
+        uint256 feeValue = vault.convertToAssets(feeShares);
+        assertApproxEqAbs(
+            feeValue,
+            expectedFeeAssets,
+            2,
+            "post-mint feeRecipient stake must equal accrued feeAssets"
+        );
+    }
+
+    /// @dev M-3 (forward-looking placeholder): a user deposit must not
+    ///      be brickable by an unavailable strategy. Today this is
+    ///      guaranteed only when the strategy is explicitly paused
+    ///      (activeAdapter == address(0)) — assets sit idle in the vault
+    ///      and the deposit succeeds. The M-3 hardening will extend the
+    ///      same guarantee to any adapter that reverts in deposit() by
+    ///      wrapping the adapter call in try/catch inside
+    ///      `_deployToAdapter`. Once that lands, swap the setup below for
+    ///      a `vm.mockCallRevert` on adapter.deposit and the test should
+    ///      continue to pass.
+    function test_deposit_survivesAdapterRevert() public {
+        vm.prank(governance);
+        vault.setAdapter(address(0)); // strategy paused — proxy for "adapter can't accept"
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        assertGt(shares, 0, "deposit must succeed when strategy is unavailable");
+        assertEq(
+            usdc.balanceOf(address(vault)),
+            amount,
+            "assets stay idle in the vault"
+        );
+        assertEq(vault.totalAssets(), amount, "totalAssets matches the deposit");
+    }
 }

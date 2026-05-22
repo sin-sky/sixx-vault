@@ -25,8 +25,10 @@ interface IAdapterRegistry {
         string calldata providerName
     ) external;
 
-    /// @notice Disable an existing adapter (governance only)
-    function disableAdapter(address adapter) external;
+    /// @notice M-5: Enable or disable a previously-registered adapter.
+    ///         Replaces the one-way `disableAdapter` so a disabled adapter
+    ///         can be re-activated without re-registering.
+    function setAdapterStatus(address adapter, bool active) external;
 
     /// @notice Returns true if adapter is registered and active
     function isActive(address adapter) external view returns (bool);
@@ -38,5 +40,7 @@ interface IAdapterRegistry {
     function getActiveAdapters() external view returns (address[] memory);
 
     event AdapterRegistered(address indexed adapter, string adapterType, string providerName);
-    event AdapterDisabled(address indexed adapter);
+    /// @dev M-5: emitted on both disable and re-enable; `active` carries
+    ///      the new state.
+    event AdapterStatusUpdated(address indexed adapter, bool active);
 }

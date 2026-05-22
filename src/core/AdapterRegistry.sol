@@ -60,10 +60,20 @@ contract AdapterRegistry is IAdapterRegistry {
         emit AdapterRegistered(adapter, adapterType_, providerName_);
     }
 
-    function disableAdapter(address adapter) external override onlyGovernance {
-        require(_adapters[adapter].status == Status.Active, "REGISTRY: not active");
-        _adapters[adapter].status = Status.Disabled;
-        emit AdapterDisabled(adapter);
+    /// @notice M-5: Set an adapter to Active or Disabled. Adapters must
+    ///         be registered first (cannot resurrect a never-registered
+    ///         address). No-op if already in the target state.
+    function setAdapterStatus(address adapter, bool active)
+        external override onlyGovernance
+    {
+        AdapterInfo storage info = _adapters[adapter];
+        require(info.status != Status.NotRegistered, "REGISTRY: not registered");
+
+        Status newStatus = active ? Status.Active : Status.Disabled;
+        if (info.status == newStatus) return;
+
+        info.status = newStatus;
+        emit AdapterStatusUpdated(adapter, active);
     }
 
     // =========================================

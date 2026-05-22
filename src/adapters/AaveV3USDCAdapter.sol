@@ -45,10 +45,25 @@ contract AaveV3USDCAdapter is IStrategyAdapter {
     /// @notice The single vault allowed to call deposit/withdraw
     address public vault;
 
+    /// @notice M-4: Pending vault for the 2-step rotation.
+    address public pendingVault;
+
     /// @notice Governance address for admin functions
     address public governance;
 
+    /// @notice M-4: Pending governance for the 2-step rotation.
+    address public pendingGovernance;
+
     bool private _paused;
+
+    // =========================================
+    // Events (M-4 admin rotations)
+    // =========================================
+
+    event VaultProposed(address indexed currentVault, address indexed pendingVault);
+    event VaultAccepted(address indexed newVault);
+    event GovernanceProposed(address indexed currentGovernance, address indexed pendingGovernance);
+    event GovernanceAccepted(address indexed newGovernance);
 
     // =========================================
     // Constructor
@@ -194,20 +209,43 @@ contract AaveV3USDCAdapter is IStrategyAdapter {
     }
 
     // =========================================
-    // Admin
+    // Admin (M-4: 2-step rotations)
     // =========================================
 
-    /// @notice Update vault address (e.g. after vault upgrade)
-    function setVault(address newVault) external {
+    /// @notice M-4: Propose a new vault. Takes effect when the proposed
+    ///         address calls `acceptVault()`. Two-step prevents bricking the
+    ///         adapter by handing off to an address that cannot act.
+    function proposeVault(address newVault) external {
         require(msg.sender == governance, "ADAPTER: not governance");
         require(newVault != address(0), "ADAPTER: zero vault");
-        vault = newVault;
+        pendingVault = newVault;
+        emit VaultProposed(vault, newVault);
     }
 
-    /// @notice Update governance (single-step for simplicity; vault uses 2-step)
-    function setGovernance(address newGovernance) external {
+    /// @notice M-4: Accept a pending vault rotation. Callable only by the
+    ///         proposed address.
+    function acceptVault() external {
+        require(msg.sender == pendingVault, "ADAPTER: not pending vault");
+        emit VaultAccepted(pendingVault);
+        vault = pendingVault;
+        pendingVault = address(0);
+    }
+
+    /// @notice M-4: Propose a new governance. Takes effect on
+    ///         `acceptGovernance()` from the proposed address.
+    function proposeGovernance(address newGovernance) external {
         require(msg.sender == governance, "ADAPTER: not governance");
         require(newGovernance != address(0), "ADAPTER: zero address");
-        governance = newGovernance;
+        pendingGovernance = newGovernance;
+        emit GovernanceProposed(governance, newGovernance);
+    }
+
+    /// @notice M-4: Accept a pending governance rotation. Callable only by
+    ///         the proposed address.
+    function acceptGovernance() external {
+        require(msg.sender == pendingGovernance, "ADAPTER: not pending governance");
+        emit GovernanceAccepted(pendingGovernance);
+        governance = pendingGovernance;
+        pendingGovernance = address(0);
     }
 }

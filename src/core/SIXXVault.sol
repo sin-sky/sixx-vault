@@ -211,9 +211,27 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         if (activeAdapter == address(0)) return;
         uint256 idle = IERC20(asset()).balanceOf(address(this));
         if (idle == 0) return;
-        IERC20(asset()).safeTransfer(activeAdapter, idle);
-        IStrategyAdapter(activeAdapter).deposit(idle);
-        _totalDebt += idle;
+
+        address adapter_ = activeAdapter;
+        // M-3: Wrap transfer + adapter.deposit() in an external self-call so
+        //      that a reverting adapter rolls the safeTransfer back as well
+        //      — funds stay idle in the vault and the outer user deposit
+        //      still succeeds. Governance can then swap or recover the
+        //      faulty adapter.
+        try this.__atomicPushToAdapter(adapter_, idle) {
+            _totalDebt += idle;
+        } catch {
+            emit AdapterDepositFailed(adapter_, idle);
+        }
+    }
+
+    /// @dev M-3 helper: external boundary so try/catch can roll back the
+    ///      transfer and adapter call atomically. Only callable by the
+    ///      contract itself.
+    function __atomicPushToAdapter(address adapter, uint256 amount) external {
+        require(msg.sender == address(this), "VAULT: self only");
+        IERC20(asset()).safeTransfer(adapter, amount);
+        IStrategyAdapter(adapter).deposit(amount);
     }
 
     /// @dev Pull at least `assets` back to the vault from the adapter

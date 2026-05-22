@@ -477,31 +477,41 @@ contract SIXXVaultTest is Test {
         );
     }
 
-    /// @dev M-3 (forward-looking placeholder): a user deposit must not
-    ///      be brickable by an unavailable strategy. Today this is
-    ///      guaranteed only when the strategy is explicitly paused
-    ///      (activeAdapter == address(0)) — assets sit idle in the vault
-    ///      and the deposit succeeds. The M-3 hardening will extend the
-    ///      same guarantee to any adapter that reverts in deposit() by
-    ///      wrapping the adapter call in try/catch inside
-    ///      `_deployToAdapter`. Once that lands, swap the setup below for
-    ///      a `vm.mockCallRevert` on adapter.deposit and the test should
-    ///      continue to pass.
+    // M-3 event mirror — re-declared so vm.expectEmit can match its signature.
+    event AdapterDepositFailed(address indexed adapter, uint256 amount);
+
+    /// @dev M-3: a reverting adapter must not be able to brick user
+    ///      deposits. The vault wraps transfer + adapter.deposit in a
+    ///      self-call, so on revert both are rolled back: funds stay idle
+    ///      in the vault, no funds get stranded in the adapter, and the
+    ///      outer ERC-4626 deposit still succeeds.
     function test_deposit_survivesAdapterRevert() public {
-        vm.prank(governance);
-        vault.setAdapter(address(0)); // strategy paused — proxy for "adapter can't accept"
+        vm.mockCallRevert(
+            address(adapter),
+            abi.encodeWithSelector(MockAdapter.deposit.selector),
+            "ADAPTER: forced revert"
+        );
 
         uint256 amount = 1_000 * USDC_6;
         vm.startPrank(alice);
         usdc.approve(address(vault), amount);
+
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit AdapterDepositFailed(address(adapter), amount);
+
         uint256 shares = vault.deposit(amount, alice);
         vm.stopPrank();
 
-        assertGt(shares, 0, "deposit must succeed when strategy is unavailable");
+        assertGt(shares, 0, "deposit must succeed despite adapter revert");
         assertEq(
             usdc.balanceOf(address(vault)),
             amount,
-            "assets stay idle in the vault"
+            "assets stay idle in the vault on adapter revert"
+        );
+        assertEq(
+            usdc.balanceOf(address(adapter)),
+            0,
+            "no funds may be stranded in the adapter"
         );
         assertEq(vault.totalAssets(), amount, "totalAssets matches the deposit");
     }

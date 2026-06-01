@@ -15,6 +15,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// Supported chains:
 ///   - Ethereum         (1)        — Aave V3 Ethereum         / USDC (native)
 ///   - Arbitrum One     (42161)    — Aave V3 Arbitrum         / USDC (native)
+///   - BNB Chain        (56)       — Venus Protocol BSC        / USDT
 ///   - ETH Sepolia      (11155111) — Aave V3 Sepolia          / USDC
 ///   - Arbitrum Sepolia (421614)   — Aave V3 Arbitrum Sepolia / USDC
 ///   - BNB Testnet      (97)       — Venus Protocol BSC Testnet / USDT
@@ -30,6 +31,7 @@ contract Deploy is Script {
     // ─── Chain IDs ───────────────────────────────────────────
     uint256 internal constant ETH_MAINNET = 1;
     uint256 internal constant ARB_ONE     = 42161;
+    uint256 internal constant BNB_MAINNET = 56;
     uint256 internal constant ETH_SEPOLIA = 11155111;
     uint256 internal constant ARB_SEPOLIA = 421614;
     uint256 internal constant BNB_TESTNET = 97;
@@ -79,6 +81,16 @@ contract Deploy is Script {
                 0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d, // USDC
                 0xBfC91D59fdAA134A4ED45f7B584cAf96D7792Eff, // Aave Pool
                 0x460b97BD498E1157530AEb3086301d5225b91216  // aUSDC
+            );
+        } else if (block.chainid == BNB_MAINNET) {
+            // Source: VenusProtocol/venus-protocol → deployments/bscmainnet (Core Pool)
+            // Verified on-chain: vUSDT.underlying() == USDT, vUSDT.symbol() == "vUSDT"
+            _deployVenusUSDT(
+                deployerPk,
+                deployer,
+                "BNB Chain",
+                0x55d398326f99059fF775485246999027B3197955, // USDT (BSC-USD, 18 decimals)
+                0xfD5840Cd36d94D7229439859C0112a4185BC0255  // vUSDT
             );
         } else if (block.chainid == BNB_TESTNET) {
             // Source: VenusProtocol/venus-protocol → deployments/bsctestnet

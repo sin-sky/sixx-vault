@@ -13,6 +13,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///         selecting protocol and addresses via block.chainid.
 ///
 /// Supported chains:
+///   - Ethereum         (1)        — Aave V3 Ethereum         / USDC (native)
 ///   - Arbitrum One     (42161)    — Aave V3 Arbitrum         / USDC (native)
 ///   - ETH Sepolia      (11155111) — Aave V3 Sepolia          / USDC
 ///   - Arbitrum Sepolia (421614)   — Aave V3 Arbitrum Sepolia / USDC
@@ -27,6 +28,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///     --rpc-url $BNB_TESTNET_RPC_URL --broadcast --verify
 contract Deploy is Script {
     // ─── Chain IDs ───────────────────────────────────────────
+    uint256 internal constant ETH_MAINNET = 1;
     uint256 internal constant ARB_ONE     = 42161;
     uint256 internal constant ETH_SEPOLIA = 11155111;
     uint256 internal constant ARB_SEPOLIA = 421614;
@@ -39,7 +41,17 @@ contract Deploy is Script {
         console2.log("Chain ID    :", block.chainid);
         console2.log("Deployer    :", deployer);
 
-        if (block.chainid == ARB_ONE) {
+        if (block.chainid == ETH_MAINNET) {
+            // Source: bgd-labs/aave-address-book → AaveV3Ethereum (native USDC)
+            _deployAaveV3USDC(
+                deployerPk,
+                deployer,
+                "Ethereum",
+                0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48, // USDC (native)
+                0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, // Aave V3 Pool
+                0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c  // aEthUSDC
+            );
+        } else if (block.chainid == ARB_ONE) {
             // Source: bgd-labs/aave-address-book → AaveV3Arbitrum (USDCn / native USDC)
             _deployAaveV3USDC(
                 deployerPk,

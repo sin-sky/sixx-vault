@@ -82,6 +82,9 @@ contract ERC4626Adapter is IStrategyAdapter, ReentrancyGuard {
     event GovernanceProposed(address indexed currentGovernance, address indexed pendingGovernance);
     event GovernanceAccepted(address indexed newGovernance);
 
+    /// @notice L-1: emitted when governance sweeps a non-core token off the adapter.
+    event Rescued(address indexed token, address indexed to, uint256 amount);
+
     // =========================================
     // Constructor
     // =========================================
@@ -242,6 +245,17 @@ contract ERC4626Adapter is IStrategyAdapter, ReentrancyGuard {
         return !_paused;
     }
 
+    /// @notice M-G1: true once this adapter holds no redeemable value.
+    /// @dev Any future "migrate-out" flow (switching the SIXXVault's active
+    ///      strategy AWAY from this adapter) MUST `require(isFullyExited())`
+    ///      before detaching, so a partially-illiquid ERC-4626 cannot strand
+    ///      shares here uncounted. `totalAssets()` floors via `convertToAssets`,
+    ///      so a zero here means nothing redeemable remains.
+    function isFullyExited() external view returns (bool) {
+        // Mirrors totalAssets() (convertToAssets floors) without an external self-call.
+        return vault.convertToAssets(vault.balanceOf(address(this))) == 0;
+    }
+
     // =========================================
     // Circuit Breaker
     // =========================================
@@ -297,5 +311,32 @@ contract ERC4626Adapter is IStrategyAdapter, ReentrancyGuard {
         emit GovernanceAccepted(pendingGovernance);
         governance = pendingGovernance;
         pendingGovernance = address(0);
+    }
+
+    // =========================================
+    // Rescue (L-1: recover stray / reward tokens)
+    // =========================================
+
+    /// @notice L-1: governance-only sweep of tokens that landed on this adapter
+    ///         (e.g. an accidental transfer, or a future MORPHO reward routing).
+    /// @dev The two CORE tokens are hard-excluded so this can never touch user
+    ///      funds:
+    ///        - `asset` (USDC): in normal operation the PUSH model leaves no idle
+    ///          underlying here, but excluding it guarantees rescue can never
+    ///          siphon a pending deposit.
+    ///        - `address(vault)` (the ERC-4626 shares): these ARE the deployed
+    ///          principal; sweeping them would drain the strategy.
+    ///      Sweeps the full balance to `to`. `nonReentrant` since `token` may be
+    ///      an arbitrary (untrusted) ERC-20.
+    /// @param token Foreign token to recover (must not be asset or vault share).
+    /// @param to    Recipient (governance-controlled).
+    function rescue(address token, address to) external nonReentrant {
+        require(msg.sender == governance, "ADAPTER: not governance");
+        require(to != address(0), "ADAPTER: zero to");
+        require(token != asset && token != address(vault), "ADAPTER: core protected");
+        uint256 bal = IERC20(token).balanceOf(address(this));
+        require(bal > 0, "ADAPTER: nothing to rescue");
+        IERC20(token).safeTransfer(to, bal);
+        emit Rescued(token, to, bal);
     }
 }

@@ -9,124 +9,84 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @title DeployERC4626Adapter
-/// @notice Deploys a SIXXVault + AdapterRegistry + ERC4626Adapter wired to a
-///         blue-chip Morpho MetaMorpho vault, selecting the target by chainid.
+/// @notice ETH-mainnet migration: deploy an ERC4626Adapter wired to the existing
+///         ETH USDC SIXXVault and switch its active strategy from Aave V3 to the
+///         Morpho · Gauntlet USDC Prime vault.
 ///
-/// Initial registered vaults (see SIXX_Morpho_Adapter spec):
-///   - Base     (8453) — Morpho · Gauntlet USDC Prime  / USDC
-///   - Ethereum (1)    — Morpho · Steakhouse USDT       / USDT
+/// This does NOT deploy a new vault or registry — it connects to the live ones
+/// from the prior Ethereum deployment (broadcast/Deploy.s.sol/1/run-latest.json)
+/// and performs a three-step migration:
+///   1. deploy ERC4626Adapter(existing vault as sixxVault, Gauntlet Prime as vault)
+///   2. registerAdapter() on the existing registry
+///   3. setAdapter() on the existing vault — recalls 100% from Aave, redeploys to Morpho
 ///
-/// Usage:
+/// Usage (broadcaster MUST be the governance EOA):
 ///   forge script script/DeployERC4626Adapter.s.sol \
-///     --rpc-url $BASE_RPC_URL --broadcast --verify
-///   forge script script/DeployERC4626Adapter.s.sol \
-///     --rpc-url $ETH_RPC_URL  --broadcast --verify
+///     --rpc-url $ETH_RPC_URL --broadcast --verify
 ///
 /// ─────────────────────────────────────────────────────────────────────────
-/// PRE-DEPLOY CHECKLIST (governance MUST confirm before broadcasting — these
-/// are the blue-chip bar; the contract itself enforces none of them):
-///   [ ] vault is ERC-4626 compliant: asset() / convertToAssets() / deposit()
-///       / withdraw() / maxWithdraw() all respond.
-///   [ ] curator is Gauntlet or Steakhouse (verify MetaMorpho curator()/owner()
-///       on-chain — do NOT trust the label alone).
+/// PRE-DEPLOY CHECKLIST (governance MUST confirm before broadcasting — the
+/// contract enforces only the asset() match; the rest is the blue-chip bar):
+///   [ ] Gauntlet USDC Prime is ERC-4626 compliant (asset/convertToAssets/
+///       deposit/withdraw/maxWithdraw all respond).
+///   [ ] curator() / owner() == Gauntlet, verified ON-CHAIN.
+///   [ ] instant redemption (not a request/claim withdrawal queue).
 ///   [ ] TVL >= $50M and vaults.fyi score >= 8.
-///   [ ] vault.asset() == the intended underlying for this chain (the script
-///       reads it from the vault and asserts equality below).
-///   [ ] instant redemption: vault is NOT a request/claim withdrawal-queue type
-///       (maxWithdraw(holder) > 0 immediately after deposit). The adapter's
-///       requiredLockPeriod() == 0 assumes this.
-///   [ ] final review of audit history / past incidents.
+///   [ ] vault.asset() == ETH USDC (also asserted below).
+///   [ ] audit / incident history reviewed.
+///   [ ] supply cap headroom >= the vault's current totalAssets (else the
+///       redeploy partially fails and funds sit idle — see fork sim).
 /// ─────────────────────────────────────────────────────────────────────────
 contract DeployERC4626Adapter is Script {
-    // ─── Chain IDs ───────────────────────────────────────────
     uint256 internal constant ETH_MAINNET = 1;
-    uint256 internal constant BASE        = 8453;
+
+    // ─── Existing ETH mainnet deployment (chain 1 broadcast) ─────────────────
+    address internal constant ETH_USDC       = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // native USDC
+    address internal constant ETH_REGISTRY   = 0x0b487365d5E7FD5d324D7221340413a096492542; // AdapterRegistry
+    address internal constant ETH_SIXX_VAULT = 0x5292A8DCd18C6512137e8cA6C21dB0dc6b830b31; // SIXXVault (USDC)
+    address internal constant ETH_GOVERNANCE = 0x58cda24e2530d34FCa304e79c37f97c347Edb150; // governance EOA
+
+    // ─── Migration target: Morpho · Gauntlet USDC Prime (Ethereum) ───────────
+    address internal constant GAUNTLET_USDC_PRIME = 0xdd0f28e19C1780eb6396170735D45153D261490d;
+
+    string internal constant PROVIDER = "Morpho - Gauntlet USDC Prime (ETH)";
 
     function run() external {
-        uint256 deployerPk = vm.envUint("PRIVATE_KEY");
-        address deployer   = vm.addr(deployerPk);
+        require(block.chainid == ETH_MAINNET, "Deploy: ETH mainnet only");
 
-        console2.log("Chain ID    :", block.chainid);
-        console2.log("Deployer    :", deployer);
+        uint256 pk     = vm.envUint("PRIVATE_KEY");
+        address sender = vm.addr(pk);
+        // register/setAdapter are governance-gated — the broadcaster must be it.
+        require(sender == ETH_GOVERNANCE, "Deploy: broadcaster must be governance");
+        // Mistaken-vault guard (also enforced in the adapter constructor).
+        require(IERC4626(GAUNTLET_USDC_PRIME).asset() == ETH_USDC, "Deploy: vault/underlying mismatch");
 
-        if (block.chainid == BASE) {
-            // Morpho · Gauntlet USDC Prime (Base)
-            _deploy(
-                deployerPk,
-                deployer,
-                "Base",
-                0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913, // USDC (Base native)
-                0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61, // Gauntlet USDC Prime vault
-                "SIXX Stable Yield USDC",
-                "sxUSDC",
-                "Morpho - Gauntlet USDC Prime (Base)"
-            );
-        } else if (block.chainid == ETH_MAINNET) {
-            // Morpho · Steakhouse USDT (Ethereum)
-            _deploy(
-                deployerPk,
-                deployer,
-                "Ethereum",
-                0xdAC17F958D2ee523a2206206994597C13D831ec7, // USDT
-                0xbEef047a543E45807105E51A8BBEFCc5950fcfBa, // Steakhouse USDT vault
-                "SIXX Stable Yield USDT",
-                "sxUSDT",
-                "Morpho - Steakhouse USDT (ETH)"
-            );
-        } else {
-            revert("DeployERC4626Adapter: unsupported chainid");
-        }
-    }
+        console2.log("Network     : Ethereum");
+        console2.log("SIXXVault   :", ETH_SIXX_VAULT);
+        console2.log("Registry    :", ETH_REGISTRY);
+        console2.log("Old adapter :", SIXXVault(ETH_SIXX_VAULT).activeAdapter());
+        console2.log("Target vault:", GAUNTLET_USDC_PRIME);
 
-    function _deploy(
-        uint256 deployerPk,
-        address deployer,
-        string memory label,
-        address underlying,
-        address vaultAddr,
-        string memory vaultName,
-        string memory vaultSymbol,
-        string memory providerName
-    ) internal {
-        console2.log("Network     :", label);
-        console2.log("Underlying  :", underlying);
-        console2.log("ERC4626     :", vaultAddr);
-        console2.log("Provider    :", providerName);
+        vm.startBroadcast(pk);
 
-        // Sanity gate (also enforced in the adapter constructor): the vault's
-        // underlying MUST match what we intend to deploy. Fails fast on a paste
-        // error before any broadcast.
-        require(IERC4626(vaultAddr).asset() == underlying, "Deploy: vault/underlying mismatch");
-
-        vm.startBroadcast(deployerPk);
-
-        AdapterRegistry registry = new AdapterRegistry(deployer);
-        console2.log("Registry    :", address(registry));
-
-        SIXXVault vault = new SIXXVault(
-            IERC20(underlying),
-            vaultName,
-            vaultSymbol,
-            deployer,
-            address(registry),
-            deployer
-        );
-        console2.log("SIXXVault   :", address(vault));
-
+        // 1. Deploy the adapter bound to the EXISTING vault.
         ERC4626Adapter adapter = new ERC4626Adapter(
-            underlying,
-            vaultAddr,
-            address(vault),
-            deployer
+            ETH_USDC,
+            GAUNTLET_USDC_PRIME,
+            ETH_SIXX_VAULT,
+            ETH_GOVERNANCE
         );
-        console2.log("Adapter     :", address(adapter));
+        console2.log("New adapter :", address(adapter));
 
-        // Only the bar-cleared adapter is registered; provider string is the
-        // vault-specific label (the adapter's own providerName() is generic).
-        registry.registerAdapter(address(adapter), "DeFi", providerName);
-        vault.setAdapter(address(adapter));
+        // 2. Whitelist it in the existing registry.
+        AdapterRegistry(ETH_REGISTRY).registerAdapter(address(adapter), "DeFi", PROVIDER);
+
+        // 3. Switch the active strategy — recalls 100% from Aave, redeploys to Morpho.
+        SIXXVault(ETH_SIXX_VAULT).setAdapter(address(adapter));
 
         vm.stopBroadcast();
-        console2.log("Deploy complete!");
+
+        console2.log("New active  :", SIXXVault(ETH_SIXX_VAULT).activeAdapter());
+        console2.log("Migration complete!");
     }
 }

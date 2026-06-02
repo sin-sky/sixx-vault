@@ -147,6 +147,9 @@ contract ERC4626Adapter is IStrategyAdapter, ReentrancyGuard {
         external override onlyVault whenNotPaused nonReentrant returns (uint256 deposited)
     {
         require(assets > 0, "ADAPTER: zero amount");
+        // Return value is the shares minted; we intentionally report the asset
+        // amount (`deposited`) per IStrategyAdapter, mirroring the existing adapters.
+        // slither-disable-next-line unused-return
         vault.deposit(assets, address(this));
         deposited = assets;
         emit Deposited(assets, deposited);
@@ -170,6 +173,8 @@ contract ERC4626Adapter is IStrategyAdapter, ReentrancyGuard {
             return 0;
         }
 
+        // Return value is the shares burned; we report the asset amount (`withdrawn`).
+        // slither-disable-next-line unused-return
         vault.withdraw(amt, recipient, address(this));
         withdrawn = amt;
         emit Withdrawn(assets, withdrawn, recipient);

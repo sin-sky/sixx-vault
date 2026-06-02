@@ -32,7 +32,7 @@ forge test --fork-url $ETH_RPC_URL  --match-contract ERC4626AdapterEthForkTest  
 |---|---|---|---|
 | `AaveV3USDCAdapter` | Aave V3 | USDC | Ethereum, Arbitrum |
 | `VenusUSDTAdapter` | Venus | USDT | BNB Chain |
-| `ERC4626Adapter` | Any ERC-4626 (v1: Morpho MetaMorpho) | USDC / USDT | Base, Ethereum |
+| `ERC4626Adapter` | Any ERC-4626 (v1: Morpho MetaMorpho) | USDC | Ethereum |
 
 `ERC4626Adapter` is a generic wrapper around a single external ERC-4626 vault.
 Blue-chip safety is a **governance-at-registration** property: the `vault` is
@@ -40,12 +40,17 @@ immutable, and the AdapterRegistry only whitelists adapters whose target has
 cleared the bar below. The same adapter is reusable for other compliant vaults
 (Sky `sUSDS`, Ethena `sUSDe`) by deploying against a different address.
 
-### Initial Morpho targets
+### Initial Morpho target (ETH USDC migration)
 
-| Product | Vault | Chain | Asset | Address |
-|---|---|---|---|---|
-| USDC standard | Gauntlet USDC Prime | Base | USDC | `0xeE8F4eC5672F09119b96Ab6fB59C27E1b7e44b61` |
-| USDT standard | Steakhouse USDT | Ethereum | USDT | `0xbEef047a543E45807105E51A8BBEFCc5950fcfBa` |
+The first deployment migrates the **existing** ETH USDC SIXXVault from Aave V3 to
+Morpho by switching its active adapter (no new vault is created):
+
+| Role | Address |
+|---|---|
+| Target vault — Morpho · Gauntlet USDC Prime (Ethereum) | `0xdd0f28e19C1780eb6396170735D45153D261490d` |
+| Existing SIXXVault (ETH USDC) | `0x5292A8DCd18C6512137e8cA6C21dB0dc6b830b31` |
+| AdapterRegistry | `0x0b487365d5E7FD5d324D7221340413a096492542` |
+| Current adapter (Aave V3, to be replaced) | `0x8857b9Fb5B0E87aDa7a104B7F8D7FaCAA892487C` |
 
 ## ERC4626Adapter — pre-deploy checklist
 
@@ -65,6 +70,10 @@ of these except the `asset()` match — they are the blue-chip bar.
 - [ ] **`vault.asset()` == the intended underlying** for the chain (also
       asserted in the adapter constructor and the deploy script).
 - [ ] **Audit & incident history** reviewed.
+- [ ] **Supply-cap headroom ≥ the vault's current `totalAssets`** — otherwise
+      `setAdapter`'s redeploy partially fails and migrated funds sit idle in the
+      vault (the M-3 try/catch leaves them recoverable, but the migration is
+      incomplete). The ETH fork sim asserts idle == 0 post-migration.
 
 > **Rewards:** MORPHO incentive rewards are distributed off-chain via a merkle
 > URD and are **not** reflected in the vault's share price, so they never appear
@@ -72,12 +81,22 @@ of these except the `asset()` match — they are the blue-chip bar.
 > governance-only claim → feeRecipient function can be added without touching
 > the core.
 
-### Deploy (after the checklist passes)
+### Deploy / migrate (after the checklist passes)
+
+`script/DeployERC4626Adapter.s.sol` connects to the **existing** ETH USDC
+SIXXVault and performs the Aave → Morpho migration in one run: deploy adapter →
+`registerAdapter` → `setAdapter`.
 
 ```bash
-forge script script/DeployERC4626Adapter.s.sol --rpc-url $BASE_RPC_URL --broadcast --verify
-forge script script/DeployERC4626Adapter.s.sol --rpc-url $ETH_RPC_URL  --broadcast --verify
+forge script script/DeployERC4626Adapter.s.sol --rpc-url $ETH_RPC_URL --broadcast --verify
 ```
 
-Requires `PRIVATE_KEY`; verification uses `ETHERSCAN_API_KEY` /
-`BASESCAN_API_KEY`. Never commit `.env`.
+The broadcaster (`PRIVATE_KEY`) **must be the governance EOA** — `register` and
+`setAdapter` are governance-gated and the script `require`s it. Verification uses
+`ETHERSCAN_API_KEY`. Never commit `.env`.
+
+Validate the whole flow against a mainnet fork first (no broadcast):
+
+```bash
+forge test --fork-url $ETH_RPC_URL --match-contract ERC4626AdapterEthMigrationForkTest -vvv
+```

@@ -9,16 +9,19 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 /// @title DeployERC4626Adapter
-/// @notice ETH-mainnet migration: deploy an ERC4626Adapter wired to the existing
-///         ETH USDC SIXXVault and switch its active strategy from Aave V3 to the
-///         Morpho · Gauntlet USDC Prime vault.
+/// @notice ETH-mainnet "rails only" (Plan A): deploy an ERC4626Adapter wired to
+///         the existing ETH USDC SIXXVault and whitelist it in the registry —
+///         WITHOUT switching the active strategy. Aave V3 stays active.
 ///
 /// This does NOT deploy a new vault or registry — it connects to the live ones
 /// from the prior Ethereum deployment (broadcast/Deploy.s.sol/1/run-latest.json)
-/// and performs a three-step migration:
+/// and performs only TWO steps:
 ///   1. deploy ERC4626Adapter(existing vault as sixxVault, Gauntlet Prime as vault)
 ///   2. registerAdapter() on the existing registry
-///   3. setAdapter() on the existing vault — recalls 100% from Aave, redeploys to Morpho
+///
+/// The third step — setAdapter() (recall 100% from Aave, redeploy to Morpho) — is
+/// intentionally NOT called here. Run it later, once the blue-chip bar is met
+/// (notably TVL >= $50M), via script/ActivateERC4626Adapter.s.sol.
 ///
 /// Usage (broadcaster MUST be the governance EOA):
 ///   forge script script/DeployERC4626Adapter.s.sol \
@@ -64,7 +67,7 @@ contract DeployERC4626Adapter is Script {
         console2.log("Network     : Ethereum");
         console2.log("SIXXVault   :", ETH_SIXX_VAULT);
         console2.log("Registry    :", ETH_REGISTRY);
-        console2.log("Old adapter :", SIXXVault(ETH_SIXX_VAULT).activeAdapter());
+        console2.log("Active (keep):", SIXXVault(ETH_SIXX_VAULT).activeAdapter());
         console2.log("Target vault:", GAUNTLET_USDC_PRIME);
 
         vm.startBroadcast(pk);
@@ -78,15 +81,15 @@ contract DeployERC4626Adapter is Script {
         );
         console2.log("New adapter :", address(adapter));
 
-        // 2. Whitelist it in the existing registry.
+        // 2. Whitelist it in the existing registry. (Does NOT change active adapter.)
         AdapterRegistry(ETH_REGISTRY).registerAdapter(address(adapter), "DeFi", PROVIDER);
 
-        // 3. Switch the active strategy — recalls 100% from Aave, redeploys to Morpho.
-        SIXXVault(ETH_SIXX_VAULT).setAdapter(address(adapter));
+        // 3. setAdapter() is intentionally NOT called — Aave stays active (Plan A).
+        //    Activate later via script/ActivateERC4626Adapter.s.sol once the bar is met.
 
         vm.stopBroadcast();
 
-        console2.log("New active  :", SIXXVault(ETH_SIXX_VAULT).activeAdapter());
-        console2.log("Migration complete!");
+        console2.log("Active (still):", SIXXVault(ETH_SIXX_VAULT).activeAdapter());
+        console2.log("Rails deployed + registered. Aave remains active.");
     }
 }

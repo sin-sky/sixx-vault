@@ -81,22 +81,42 @@ of these except the `asset()` match — they are the blue-chip bar.
 > governance-only claim → feeRecipient function can be added without touching
 > the core.
 
-### Deploy / migrate (after the checklist passes)
+### Deploy (Plan A: rails only — Aave stays active)
 
-`script/DeployERC4626Adapter.s.sol` connects to the **existing** ETH USDC
-SIXXVault and performs the Aave → Morpho migration in one run: deploy adapter →
-`registerAdapter` → `setAdapter`.
+Deployment is split into two governance-gated steps so the adapter can be
+deployed and whitelisted **without** changing the active strategy:
 
-```bash
-forge script script/DeployERC4626Adapter.s.sol --rpc-url $ETH_RPC_URL --broadcast --verify
-```
+1. **Rails** — `script/DeployERC4626Adapter.s.sol`: deploy `ERC4626Adapter` +
+   `registerAdapter`. Does **not** call `setAdapter`; Aave V3 remains active.
 
-The broadcaster (`PRIVATE_KEY`) **must be the governance EOA** — `register` and
-`setAdapter` are governance-gated and the script `require`s it. Verification uses
+   ```bash
+   forge script script/DeployERC4626Adapter.s.sol --rpc-url $ETH_RPC_URL --broadcast --verify
+   ```
+
+2. **Activate** (deferred until the blue-chip bar is met — notably TVL ≥ $50M) —
+   `script/ActivateERC4626Adapter.s.sol`: calls `setAdapter` (recall-all from
+   Aave → redeploy to Morpho).
+
+   ```bash
+   ADAPTER=0x<deployed adapter> \
+   forge script script/ActivateERC4626Adapter.s.sol --rpc-url $ETH_RPC_URL --broadcast
+   ```
+
+The broadcaster (`PRIVATE_KEY`) **must be the governance EOA** — both steps are
+governance-gated and the scripts `require` it. Verification uses
 `ETHERSCAN_API_KEY`. Never commit `.env`.
 
-Validate the whole flow against a mainnet fork first (no broadcast):
+Validate the full migration against a mainnet fork first (no broadcast):
 
 ```bash
 forge test --fork-url $ETH_RPC_URL --match-contract ERC4626AdapterEthMigrationForkTest -vvv
 ```
+
+#### Live deployment (Ethereum mainnet)
+
+| Item | Value |
+|---|---|
+| `ERC4626Adapter` (Gauntlet USDC Prime) | [`0x4f6D6C9E815D37870307E524FCe4dcc822cd9ad2`](https://etherscan.io/address/0x4f6D6C9E815D37870307E524FCe4dcc822cd9ad2) (verified) |
+| Active adapter | `0x8857…487C` (**Aave V3 — unchanged**) |
+
+`setAdapter` has **not** been run — the Morpho adapter is registered but inactive.

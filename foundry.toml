@@ -25,7 +25,7 @@ bnb_testnet      = "${BNB_TESTNET_RPC_URL}"
 
 [etherscan]
 arbitrum         = { key = "${ARBISCAN_API_KEY}",              chain = 42161 }
-arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}",              chain = 421614 }
+arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}",              chain = 421614, url = "https://api-sepolia.arbiscan.io/api" }
 ethereum         = { key = "${ETHERSCAN_API_KEY}",             chain = 1 }
 sepolia          = { key = "${ETH_SEPOLIA_ETHERSCAN_API_KEY}", chain = 11155111 }
 bnb              = { key = "${BSCSCAN_API_KEY}",               chain = 56 }

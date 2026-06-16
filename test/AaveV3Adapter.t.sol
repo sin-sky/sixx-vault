@@ -19,7 +19,7 @@ contract AaveV3AdapterForkTest is Test {
     // ─── Arbitrum One Addresses ───────────────────────────────
     address constant USDC      = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
     address constant AAVE_POOL = 0x794a61358D6845594F94dc1DB02A252b5b4814aD;
-    address constant A_USDC    = 0x625E7708f30cA75bfd92586e17077590C60eb4cD;
+    address constant A_USDC    = 0x724dc807b04555b71ed48a6896b6F41593b8C637; // aUSDCn (native USDC)
 
     // ─── Actors ───────────────────────────────────────────────
     address governance = makeAddr("governance");

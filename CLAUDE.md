@@ -60,3 +60,16 @@ Other constraints:
 - `test/AaveV3Adapter.t.sol` — integration tests against live Arbitrum One state; needs `--fork-url $ARB_RPC_URL`. Hardcodes Arbitrum USDC / Aave Pool / aUSDC addresses.
 
 When adding a new adapter, mirror the `AaveV3USDCAdapter` pattern: store `vault` and `governance` as state, gate writes with `onlyVault`, expose live APY via the underlying protocol's rate oracle, and add both a unit suite (against a mock pool) and a fork suite.
+
+
+---
+
+## Deployed Contract Addresses
+
+### Arbitrum Sepolia (testnet)
+
+| Contract | Address |
+|---|---|
+| AdapterRegistry | `0x4ca6dc159982134365547331a064514fe7085f35` |
+| SIXXVault | `0x289712ce63ad84cfe5721d2036a4693704382898` |
+| AaveV3USDCAdapter | `0x0fb1442f7c48f7256205050f1fa4a56e58b13bf9` |

@@ -20,6 +20,15 @@ interface IVenusVToken {
     /// @return 0 on success, non-zero error code on failure
     function redeemUnderlying(uint256 redeemAmount) external returns (uint256);
 
+    /// @notice Redeem a specific amount of vTokens for the underlying.
+    /// @dev Burns `redeemTokens` vTokens and transfers the equivalent underlying
+    ///      (`redeemTokens * exchangeRate / 1e18`) to `msg.sender`. Unlike
+    ///      `redeemUnderlying`, this lets a position be drained to exactly zero
+    ///      vTokens, leaving no sub-unit dust behind.
+    /// @param redeemTokens Amount of vTokens to burn
+    /// @return 0 on success, non-zero error code on failure
+    function redeem(uint256 redeemTokens) external returns (uint256);
+
     /// @notice vToken balance of `account` (NOT underlying-denominated)
     function balanceOf(address account) external view returns (uint256);
 

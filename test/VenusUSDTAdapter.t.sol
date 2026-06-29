@@ -72,6 +72,14 @@ contract MockVUSDT is IVenusVToken {
         return 0;
     }
 
+    function redeem(uint256 redeemTokens) external returns (uint256) {
+        if (redeemShouldFail) return 1;
+        if (redeemTokens > _vBal[msg.sender]) return 9;
+        _vBal[msg.sender] -= redeemTokens;
+        IERC20(_underlying).transfer(msg.sender, (redeemTokens * exchangeRate) / 1e18);
+        return 0;
+    }
+
     // ── test helpers ──────────────────────────────────────────
     function setExchangeRate(uint256 r) external { exchangeRate = r; }
     function setSupplyRate(uint256 r) external { supplyRate = r; }
@@ -255,6 +263,34 @@ contract VenusUSDTAdapterTest is Test {
         vm.prank(vault);
         vm.expectRevert("ADAPTER: redeem failed");
         adapter.withdraw(DEPOSIT, alice);
+    }
+
+    /// @dev Partial withdraw (< totalAssets) uses redeemUnderlying and leaves the
+    ///      remaining position invested.
+    function test_withdraw_partial_keepsRemainderInvested() public {
+        _fundAndDeposit(DEPOSIT);
+        uint256 part = DEPOSIT / 4;
+
+        vm.prank(vault);
+        uint256 withdrawn = adapter.withdraw(part, alice);
+
+        assertEq(withdrawn, part, "exact partial amount");
+        assertEq(usdt.balanceOf(alice), part, "recipient got the partial amount");
+        assertApproxEqAbs(adapter.totalAssets(), DEPOSIT - part, 1, "remainder stays invested");
+        assertGt(vusdt.balanceOf(address(adapter)), 0, "still holds vUSDT");
+    }
+
+    /// @dev Drain-all withdraw (>= totalAssets) redeems the entire vToken balance,
+    ///      leaving zero vUSDT — the fix that prevents dust accumulation.
+    function test_withdraw_drainAll_leavesNoVTokenDust() public {
+        _fundAndDeposit(DEPOSIT);
+        assertGt(vusdt.balanceOf(address(adapter)), 0, "holds vUSDT before");
+
+        vm.prank(vault);
+        adapter.withdraw(DEPOSIT, alice);
+
+        assertEq(vusdt.balanceOf(address(adapter)), 0, "drained to zero vUSDT");
+        assertEq(adapter.totalAssets(), 0, "no residual assets");
     }
 
     /// @dev Withdrawals must keep working while the adapter is paused
@@ -553,7 +589,7 @@ contract VenusUSDTAdapterForkTest is Test {
     function test_fork_emergency_shutdown_full_flow() public {
         vm.startPrank(alice);
         IERC20(USDT).approve(address(vault), DEPOSIT);
-        vault.deposit(DEPOSIT, alice);
+        uint256 shares = vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
         vm.prank(governance);
@@ -576,22 +612,36 @@ contract VenusUSDTAdapterForkTest is Test {
         ));
         vault.deposit(DEPOSIT, alice);
 
-        // Holders can still exit during shutdown. We withdraw an amount fully
-        // covered by the recalled idle balance to prove the exit path.
-        //
-        // ⚠️ FINDING (escalate to architect — NOT masked, just isolated here):
-        //   Redeeming the *last* position to the wei can revert with Venus
-        //   "redeemTokens zero". Emergency recall leaves sub-unit vUSDT dust that
-        //   stays counted in totalAssets(); a 100% redeem then makes
-        //   _recallFromAdapter() call redeemUnderlying(dust), and Venus floors
-        //   dust/exchangeRate to 0 vTokens → revert. This dust-trap is specific to
-        //   exchange-rate adapters (Venus); Aave's 1:1 aToken cannot hit it.
-        //   See test_unit equivalent + report. Mitigation lives in vault/adapter
-        //   (e.g. skip sub-vToken-unit recalls), so it is out of scope for tests.
-        uint256 exit = DEPOSIT - 1e16; // 0.01 USDT headroom keeps it within idle
-        vault.withdraw(exit, alice, alice); // still pranked as alice
+        // Holder fully exits during shutdown — the drain-all fix means the 100%
+        // redeem no longer trips the Venus dust trap (see the dedicated
+        // regression test_fork_full_exit_after_shutdown_does_not_trap).
+        uint256 withdrawn = vault.redeem(shares, alice, alice);
         vm.stopPrank();
-        assertGe(IERC20(USDT).balanceOf(alice), exit, "Holder can exit during shutdown");
+        assertApproxEqRel(withdrawn, DEPOSIT, 0.001e18, "Can fully withdraw in emergency");
+    }
+
+    /// @dev REGRESSION (Venus dust trap): the LAST holder must be able to redeem
+    ///      100% of their position after an emergency shutdown. Before the fix the
+    ///      emergency recall left sub-unit vUSDT dust counted in totalAssets(), and
+    ///      a full redeem then tried redeemUnderlying(dust) → Venus "redeemTokens
+    ///      zero" revert. The fix makes the adapter's drain-all path redeem the
+    ///      entire vToken balance so no dust survives the recall.
+    function test_fork_full_exit_after_shutdown_does_not_trap() public {
+        vm.startPrank(alice);
+        IERC20(USDT).approve(address(vault), DEPOSIT);
+        uint256 shares = vault.deposit(DEPOSIT, alice);
+        vm.stopPrank();
+
+        vm.prank(governance);
+        vault.setEmergencyShutdown(true);
+
+        // The sole holder redeems 100% of shares — must not revert.
+        vm.prank(alice);
+        uint256 withdrawn = vault.redeem(shares, alice, alice);
+
+        assertApproxEqRel(withdrawn, DEPOSIT, 0.001e18, "Full exit returns ~deposit");
+        // Adapter fully drained (no orphaned dust counted as live assets).
+        assertEq(IERC20(VUSDT).balanceOf(address(adapter)), 0, "No vUSDT dust left");
     }
 
     function test_fork_estimated_apy() public view {

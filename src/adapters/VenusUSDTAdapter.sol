@@ -116,6 +116,11 @@ contract VenusUSDTAdapter is IStrategyAdapter {
     ///      but acceptable for previews. Withdraw paths get fresh accrual since
     ///      `redeemUnderlying` accrues interest first.
     function totalAssets() external view override returns (uint256) {
+        return _underlyingValue();
+    }
+
+    /// @dev Underlying value of held vUSDT at the stored (slightly stale) rate.
+    function _underlyingValue() internal view returns (uint256) {
         return (vToken.balanceOf(address(this)) * vToken.exchangeRateStored()) / 1e18;
     }
 
@@ -137,9 +142,27 @@ contract VenusUSDTAdapter is IStrategyAdapter {
     {
         require(assets > 0, "ADAPTER: zero amount");
         require(recipient != address(0), "ADAPTER: zero recipient");
-        require(vToken.redeemUnderlying(assets) == 0, "ADAPTER: redeem failed");
-        IERC20(asset).safeTransfer(recipient, assets);
-        withdrawn = assets;
+
+        if (assets >= _underlyingValue()) {
+            // Drain-all path (recall on shutdown / adapter migration / last full
+            // exit): redeem the ENTIRE vUSDT balance by vToken amount instead of
+            // by underlying amount. `redeemUnderlying()` leaves sub-unit vUSDT
+            // dust — the stored rate used to size the request is staler than the
+            // rate Venus accrues to inside the call — and that residual dust later
+            // bricks a 100% exit with Venus "redeemTokens zero". `redeem(balance)`
+            // burns to exactly zero, so no dust survives the recall.
+            uint256 vBal = vToken.balanceOf(address(this));
+            uint256 before = IERC20(asset).balanceOf(address(this));
+            if (vBal > 0) {
+                require(vToken.redeem(vBal) == 0, "ADAPTER: redeem failed");
+            }
+            withdrawn = IERC20(asset).balanceOf(address(this)) - before;
+        } else {
+            require(vToken.redeemUnderlying(assets) == 0, "ADAPTER: redeem failed");
+            withdrawn = assets;
+        }
+
+        IERC20(asset).safeTransfer(recipient, withdrawn);
         emit Withdrawn(assets, withdrawn, recipient);
     }
 

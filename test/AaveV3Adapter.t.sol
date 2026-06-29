@@ -7,19 +7,21 @@ import {AaveV3USDCAdapter} from "../src/adapters/AaveV3USDCAdapter.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @title AaveV3AdapterForkTest
-/// @notice Integration tests against live Arbitrum One state.
+/// @title AaveV3AdapterForkBase
+/// @notice Shared integration tests for AaveV3USDCAdapter against live state.
+///         Network-specific addresses are supplied by the concrete subclasses
+///         (Arbitrum One / Ethereum mainnet) so the suite runs identically on
+///         every chain the adapter targets.
 ///
-/// Run:
+/// Run (Arbitrum):
 ///   forge test --fork-url $ARB_RPC_URL --match-contract AaveV3AdapterForkTest -vvv
-///
-/// Or pin to a block for reproducible results:
-///   forge test --fork-url $ARB_RPC_URL --fork-block-number 300000000 -vvv
-contract AaveV3AdapterForkTest is Test {
-    // ─── Arbitrum One Addresses ───────────────────────────────
-    address constant USDC      = 0xaf88d065e77c8cC2239327C5EDb3A432268e5831;
-    address constant AAVE_POOL = 0x794a61358D6845594F94dc1DB02A252b5b4814aD;
-    address constant A_USDC    = 0x724dc807b04555b71ed48a6896b6F41593b8C637; // aUSDCn (native USDC)
+/// Run (Ethereum):
+///   forge test --fork-url $ETH_RPC_URL --match-contract AaveV3AdapterEthForkTest -vvv
+abstract contract AaveV3AdapterForkBase is Test {
+    // ─── Network-specific addresses (provided by subclass) ────
+    function _usdc() internal pure virtual returns (address);
+    function _pool() internal pure virtual returns (address);
+    function _aToken() internal pure virtual returns (address);
 
     // ─── Actors ───────────────────────────────────────────────
     address governance = makeAddr("governance");
@@ -31,7 +33,7 @@ contract AaveV3AdapterForkTest is Test {
     SIXXVault          vault;
     AaveV3USDCAdapter  adapter;
 
-    uint256 constant DEPOSIT = 1_000e6; // 1,000 USDC
+    uint256 constant DEPOSIT = 1_000e6; // 1,000 USDC (6 decimals on Arb + Eth)
 
     // ─────────────────────────────────────────────────────────
     function setUp() public {
@@ -42,7 +44,7 @@ contract AaveV3AdapterForkTest is Test {
         // Deploy vault
         vm.prank(governance);
         vault = new SIXXVault(
-            IERC20(USDC),
+            IERC20(_usdc()),
             "SIXX Stable Yield",
             "sxUSDC",
             governance,
@@ -52,9 +54,9 @@ contract AaveV3AdapterForkTest is Test {
 
         // Deploy adapter
         adapter = new AaveV3USDCAdapter(
-            USDC,
-            AAVE_POOL,
-            A_USDC,
+            _usdc(),
+            _pool(),
+            _aToken(),
             address(vault),
             governance,
             0 // referral code
@@ -67,7 +69,7 @@ contract AaveV3AdapterForkTest is Test {
         vm.stopPrank();
 
         // Fund alice via deal() — sets ERC-20 balance without needing a whale
-        deal(USDC, alice, DEPOSIT * 10);
+        deal(_usdc(), alice, DEPOSIT * 10);
     }
 
     // ─────────────────────────────────────────────────────────
@@ -76,19 +78,19 @@ contract AaveV3AdapterForkTest is Test {
 
     function test_smoke_deposit() public {
         vm.startPrank(alice);
-        IERC20(USDC).approve(address(vault), DEPOSIT);
+        IERC20(_usdc()).approve(address(vault), DEPOSIT);
         uint256 shares = vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
         console2.log("--- Smoke Deposit ---");
         console2.log("Shares received :", shares);
         console2.log("Vault totalAssets:", vault.totalAssets());
-        console2.log("Adapter aUSDC   :", IERC20(A_USDC).balanceOf(address(adapter)));
-        console2.log("Vault USDC idle :", IERC20(USDC).balanceOf(address(vault)));
+        console2.log("Adapter aUSDC   :", IERC20(_aToken()).balanceOf(address(adapter)));
+        console2.log("Vault USDC idle :", IERC20(_usdc()).balanceOf(address(vault)));
 
         assertGt(shares, 0, "Shares must be > 0");
         // All assets deployed — vault idle should be 0
-        assertEq(IERC20(USDC).balanceOf(address(vault)), 0, "Vault fully deployed");
+        assertEq(IERC20(_usdc()).balanceOf(address(vault)), 0, "Vault fully deployed");
         // aUSDC balance should approximate deposit (slight rounding)
         assertApproxEqAbs(adapter.totalAssets(), DEPOSIT, 2, "Adapter holds ~DEPOSIT");
         assertApproxEqAbs(vault.totalAssets(), DEPOSIT, 2, "totalAssets ~DEPOSIT");
@@ -100,17 +102,17 @@ contract AaveV3AdapterForkTest is Test {
 
     function test_deposit_then_withdraw() public {
         vm.startPrank(alice);
-        IERC20(USDC).approve(address(vault), DEPOSIT);
+        IERC20(_usdc()).approve(address(vault), DEPOSIT);
         uint256 shares = vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
-        uint256 usdcBefore = IERC20(USDC).balanceOf(alice);
+        uint256 usdcBefore = IERC20(_usdc()).balanceOf(alice);
 
         vm.startPrank(alice);
         uint256 withdrawn = vault.redeem(shares, alice, alice);
         vm.stopPrank();
 
-        uint256 usdcAfter = IERC20(USDC).balanceOf(alice);
+        uint256 usdcAfter = IERC20(_usdc()).balanceOf(alice);
 
         console2.log("--- Round-trip ---");
         console2.log("Deposited  :", DEPOSIT);
@@ -128,7 +130,7 @@ contract AaveV3AdapterForkTest is Test {
 
     function test_yield_accrual_30_days() public {
         vm.startPrank(alice);
-        IERC20(USDC).approve(address(vault), DEPOSIT);
+        IERC20(_usdc()).approve(address(vault), DEPOSIT);
         vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
@@ -157,7 +159,7 @@ contract AaveV3AdapterForkTest is Test {
     function test_emergency_shutdown_full_flow() public {
         // Deposit
         vm.startPrank(alice);
-        IERC20(USDC).approve(address(vault), DEPOSIT);
+        IERC20(_usdc()).approve(address(vault), DEPOSIT);
         uint256 shares = vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
@@ -166,18 +168,23 @@ contract AaveV3AdapterForkTest is Test {
         vault.setEmergencyShutdown(true);
 
         console2.log("--- Emergency Shutdown ---");
-        console2.log("Vault USDC after shutdown :", IERC20(USDC).balanceOf(address(vault)));
+        console2.log("Vault USDC after shutdown :", IERC20(_usdc()).balanceOf(address(vault)));
         console2.log("Adapter aUSDC after shutdown:", adapter.totalAssets());
 
         assertApproxEqAbs(
-            IERC20(USDC).balanceOf(address(vault)), DEPOSIT, 2,
+            IERC20(_usdc()).balanceOf(address(vault)), DEPOSIT, 2,
             "Assets recalled to vault"
         );
 
-        // New deposit should revert
+        // New deposit should revert. OZ v5: maxDeposit() returns 0 on shutdown →
+        // ERC4626ExceededMaxDeposit fires before the vault's own
+        // "VAULT: emergency shutdown" check.
         vm.startPrank(alice);
-        IERC20(USDC).approve(address(vault), DEPOSIT);
-        vm.expectRevert("VAULT: emergency shutdown");
+        IERC20(_usdc()).approve(address(vault), DEPOSIT);
+        vm.expectRevert(abi.encodeWithSelector(
+            bytes4(keccak256("ERC4626ExceededMaxDeposit(address,uint256,uint256)")),
+            alice, DEPOSIT, uint256(0)
+        ));
         vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
@@ -207,17 +214,17 @@ contract AaveV3AdapterForkTest is Test {
 
     function test_two_depositors_proportional_shares() public {
         address bob = makeAddr("bob");
-        deal(USDC, bob, DEPOSIT * 10);
+        deal(_usdc(), bob, DEPOSIT * 10);
 
         // Alice deposits 1000
         vm.startPrank(alice);
-        IERC20(USDC).approve(address(vault), DEPOSIT);
+        IERC20(_usdc()).approve(address(vault), DEPOSIT);
         uint256 sharesAlice = vault.deposit(DEPOSIT, alice);
         vm.stopPrank();
 
         // Bob deposits 2000 (2x)
         vm.startPrank(bob);
-        IERC20(USDC).approve(address(vault), DEPOSIT * 2);
+        IERC20(_usdc()).approve(address(vault), DEPOSIT * 2);
         uint256 sharesBob = vault.deposit(DEPOSIT * 2, bob);
         vm.stopPrank();
 
@@ -229,5 +236,31 @@ contract AaveV3AdapterForkTest is Test {
         // Bob should have ~2x Alice's shares
         assertApproxEqRel(sharesBob, sharesAlice * 2, 0.001e18, "Bob has 2x shares");
         assertApproxEqAbs(vault.totalAssets(), DEPOSIT * 3, 3, "Total = 3000 USDC");
+    }
+}
+
+/// @notice Live Arbitrum One state.
+contract AaveV3AdapterForkTest is AaveV3AdapterForkBase {
+    function _usdc() internal pure override returns (address) {
+        return 0xaf88d065e77c8cC2239327C5EDb3A432268e5831; // native USDC
+    }
+    function _pool() internal pure override returns (address) {
+        return 0x794a61358D6845594F94dc1DB02A252b5b4814aD; // Aave V3 Pool
+    }
+    function _aToken() internal pure override returns (address) {
+        return 0x724dc807b04555b71ed48a6896b6F41593b8C637; // aArbUSDCn
+    }
+}
+
+/// @notice Live Ethereum mainnet state.
+contract AaveV3AdapterEthForkTest is AaveV3AdapterForkBase {
+    function _usdc() internal pure override returns (address) {
+        return 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
+    }
+    function _pool() internal pure override returns (address) {
+        return 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2; // Aave V3 Pool
+    }
+    function _aToken() internal pure override returns (address) {
+        return 0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c; // aEthUSDC
     }
 }

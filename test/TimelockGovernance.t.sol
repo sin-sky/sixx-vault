@@ -11,7 +11,6 @@ import {MockAdapter} from "./mocks/MockAdapter.sol";
 
 contract TimelockGovernanceTest is Test {
     address safe = address(0x5AFE);
-    address alice = address(0xA11CE);
 
     MockUSDC usdc;
     TimelockController timelock;
@@ -54,6 +53,36 @@ contract TimelockGovernanceTest is Test {
         _scheduleAndExecute(address(vault), setData);
 
         assertEq(vault.activeAdapter(), address(adapter));
+    }
+
+    function test_setAdapter_execute_before_delay_reverts() public {
+        // register adapter through the timelock first (same pattern as the passing test)
+        bytes memory regData = abi.encodeWithSelector(
+            registry.registerAdapter.selector, address(adapter), "DeFi", "Mock"
+        );
+        _scheduleAndExecute(address(registry), regData);
+
+        // schedule setAdapter but do NOT warp past the delay
+        bytes memory setData = abi.encodeWithSelector(vault.setAdapter.selector, address(adapter));
+        bytes32 salt = bytes32(uint256(1));
+        bytes32 opId = timelock.hashOperation(address(vault), 0, setData, bytes32(0), salt);
+
+        vm.prank(safe);
+        timelock.schedule(address(vault), 0, setData, bytes32(0), salt, DELAY);
+
+        // explicit proof the operation is not yet executable
+        assertFalse(timelock.isOperationReady(opId));
+
+        vm.prank(safe);
+        vm.expectRevert();
+        timelock.execute(address(vault), 0, setData, bytes32(0), salt);
+
+        // still not set, since execution reverted
+        assertEq(vault.activeAdapter(), address(0));
+
+        // bracket the property: after the delay elapses, the same op becomes ready
+        vm.warp(block.timestamp + DELAY + 1);
+        assertTrue(timelock.isOperationReady(opId));
     }
 
     function test_emergency_shutdown_bypasses_timelock_via_guardian() public {

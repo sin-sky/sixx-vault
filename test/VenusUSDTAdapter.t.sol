@@ -329,6 +329,7 @@ contract VenusUSDTAdapterTest is Test {
         _fundAndDeposit(DEPOSIT);
         vm.expectEmit(false, false, false, true, address(adapter));
         emit Harvested(0);
+        vm.prank(vault);
         uint256 harvested = adapter.harvest();
         assertEq(harvested, 0, "harvest returns 0");
         assertEq(adapter.totalAssets(), DEPOSIT, "harvest does not change assets");

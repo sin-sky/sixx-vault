@@ -5,6 +5,7 @@ import {IStrategyAdapter} from "../interfaces/IStrategyAdapter.sol";
 import {IVenusVToken} from "../interfaces/IVenusVToken.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title VenusUSDTAdapter
 /// @notice Supplies USDT to Venus Protocol (BNB Chain) and holds vUSDT.
@@ -16,7 +17,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///        USDT       0xA11c8D9DC9b66E209Ef60F0C8D969D3CD988782c
 ///        vUSDT      0xb7526572FFE56AB9D7489838Bf2E18e3323b441A
 ///        Unitroller 0x94d1820b2D1c7c7452A163983Dc888CEC546b77D
-contract VenusUSDTAdapter is IStrategyAdapter {
+contract VenusUSDTAdapter is IStrategyAdapter, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // =========================================
@@ -126,7 +127,7 @@ contract VenusUSDTAdapter is IStrategyAdapter {
 
     /// @notice Vault sends USDT here, then calls this to supply to Venus
     function deposit(uint256 assets)
-        external override onlyVault whenNotPaused returns (uint256 deposited)
+        external override onlyVault whenNotPaused nonReentrant returns (uint256 deposited)
     {
         require(assets > 0, "ADAPTER: zero amount");
         require(vToken.mint(assets) == 0, "ADAPTER: mint failed");
@@ -138,7 +139,7 @@ contract VenusUSDTAdapter is IStrategyAdapter {
     /// @dev Venus' redeemUnderlying sends to msg.sender (this adapter), so we
     ///      then forward to `recipient`.
     function withdraw(uint256 assets, address recipient)
-        external override onlyVault returns (uint256 withdrawn)
+        external override onlyVault nonReentrant returns (uint256 withdrawn)
     {
         require(assets > 0, "ADAPTER: zero amount");
         require(recipient != address(0), "ADAPTER: zero recipient");

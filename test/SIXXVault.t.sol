@@ -5,6 +5,7 @@ import {Test, console2} from "forge-std/Test.sol";
 import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {MockAdapter} from "./mocks/MockAdapter.sol";
+import {FaultyAdapter} from "./mocks/FaultyAdapter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -209,6 +210,75 @@ contract SIXXVaultTest is Test {
         vm.stopPrank();
 
         assertApproxEqAbs(withdrawn, amount, 2, "Should still withdraw in emergency");
+    }
+
+    /// B: emergency shutdown waives the lock so a locked user can exit immediately.
+    function test_emergency_shutdown_waives_lock() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice); // alice now locked for 7 days
+        vm.stopPrank();
+
+        // Sanity: still locked, so maxRedeem is 0 before shutdown.
+        assertEq(vault.maxRedeem(alice), 0, "locked before shutdown");
+
+        vm.prank(governance);
+        vault.setEmergencyShutdown(true);
+
+        // Lock is waived under shutdown → redeem succeeds immediately (well within 7 days).
+        assertGt(vault.maxRedeem(alice), 0, "lock waived under shutdown");
+        vm.prank(alice);
+        uint256 withdrawn = vault.redeem(shares, alice, alice);
+        assertApproxEqAbs(withdrawn, amount, 2, "locked user exits under shutdown");
+    }
+
+    /// A: a reverting adapter must not brick the emergency shutdown.
+    function test_emergency_shutdown_succeeds_when_recall_reverts() public {
+        FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(faulty), "Test", "Faulty");
+        vault.setAdapter(address(faulty)); // switch active adapter to faulty (no funds yet)
+        vm.stopPrank();
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // funds now in faulty adapter
+        vm.stopPrank();
+
+        faulty.setRevertOnWithdraw(true); // adapter is now "frozen"
+
+        // With withdraw forced to revert, the only way shutdown can succeed is via the
+        // try/catch (A). If recall were a direct call, this tx would revert.
+        vm.prank(governance);
+        vault.setEmergencyShutdown(true);
+
+        assertTrue(vault.emergencyShutdown(), "shutdown took effect despite recall failure");
+    }
+
+    /// M13-16: recall reverts if the adapter silently under-delivers.
+    function test_recall_reverts_on_adapter_shortfall() public {
+        FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(faulty), "Test", "Faulty");
+        vault.setAdapter(address(faulty));
+        vm.stopPrank();
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        faulty.setDeliverBps(9_000); // deliver only 90% of what is requested
+
+        vm.prank(alice);
+        vm.expectRevert(bytes("VAULT: adapter shortfall"));
+        vault.redeem(shares, alice, alice);
     }
 
     // ─────────────────────────────────────────────────────────

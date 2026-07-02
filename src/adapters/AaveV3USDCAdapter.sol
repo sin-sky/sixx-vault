@@ -5,6 +5,7 @@ import {IStrategyAdapter} from "../interfaces/IStrategyAdapter.sol";
 import {IAavePool} from "../interfaces/IAavePool.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title AaveV3USDCAdapter
 /// @notice Supplies USDC to Aave V3 and holds aUSDC.
@@ -19,7 +20,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 ///        USDC      0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 ///        Aave Pool 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2
 ///        aUSDC     0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c
-contract AaveV3USDCAdapter is IStrategyAdapter {
+contract AaveV3USDCAdapter is IStrategyAdapter, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // =========================================
@@ -126,7 +127,7 @@ contract AaveV3USDCAdapter is IStrategyAdapter {
     /// @notice Vault sends USDC here, then calls this to supply to Aave
     /// @dev Vault does `safeTransfer(adapter, idle)` before calling `deposit(idle)`
     function deposit(uint256 assets)
-        external override onlyVault whenNotPaused returns (uint256 deposited)
+        external override onlyVault whenNotPaused nonReentrant returns (uint256 deposited)
     {
         require(assets > 0, "ADAPTER: zero amount");
         // USDC is already in this contract (transferred by vault)
@@ -136,13 +137,18 @@ contract AaveV3USDCAdapter is IStrategyAdapter {
     }
 
     /// @notice Withdraw USDC from Aave and send directly to `recipient`
+    /// @dev C: On a full exit (recall-all during shutdown / adapter migration) use
+    ///      `type(uint256).max` so Aave sweeps the ENTIRE aUSDC balance, including the
+    ///      interest that accrues inside the withdraw call. A fixed `assets` amount
+    ///      would leave sub-unit aUSDC dust stranded once the vault stops pointing here.
     function withdraw(uint256 assets, address recipient)
-        external override onlyVault returns (uint256 withdrawn)
+        external override onlyVault nonReentrant returns (uint256 withdrawn)
     {
         require(assets > 0, "ADAPTER: zero amount");
         require(recipient != address(0), "ADAPTER: zero recipient");
-        // Aave withdraws up to `assets`; returns actual amount withdrawn
-        withdrawn = aavePool.withdraw(asset, assets, recipient);
+        uint256 amount = assets >= aToken.balanceOf(address(this)) ? type(uint256).max : assets;
+        // Aave withdraws `amount` (or the full balance for max); returns actual withdrawn.
+        withdrawn = aavePool.withdraw(asset, amount, recipient);
         emit Withdrawn(assets, withdrawn, recipient);
     }
 

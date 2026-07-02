@@ -143,13 +143,15 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
     /// @dev H-4: Surface the lock state through the ERC-4626 max* views so that
     ///      integrators and previews see 0 capacity while the owner is locked.
+    ///      B: emergency shutdown waives the lock so users can exit immediately
+    ///      (matches the "safe withdrawal by users" intent of shutdown).
     function maxWithdraw(address owner) public view override(ERC4626, IERC4626) returns (uint256) {
-        if (_lockedUntil[owner] > block.timestamp) return 0;
+        if (!emergencyShutdown && _lockedUntil[owner] > block.timestamp) return 0;
         return super.maxWithdraw(owner);
     }
 
     function maxRedeem(address owner) public view override(ERC4626, IERC4626) returns (uint256) {
-        if (_lockedUntil[owner] > block.timestamp) return 0;
+        if (!emergencyShutdown && _lockedUntil[owner] > block.timestamp) return 0;
         return super.maxRedeem(owner);
     }
 
@@ -187,7 +189,10 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         uint256 assets,
         uint256 shares
     ) internal override {
-        require(block.timestamp >= _lockedUntil[owner], "VAULT: still locked");
+        // B: emergency shutdown waives the lock so users can withdraw immediately.
+        if (!emergencyShutdown) {
+            require(block.timestamp >= _lockedUntil[owner], "VAULT: still locked");
+        }
         _recallFromAdapter(assets);
         super._withdraw(caller, receiver, owner, assets, shares);
     }
@@ -245,8 +250,15 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         uint256 toWithdraw = needed > available ? available : needed;
         if (toWithdraw == 0) return;
 
+        // M13-16: don't trust the adapter's return value blindly — measure the actual
+        //         balance delta and require it covers the request, so an adapter that
+        //         silently under-delivers reverts here (explicit) instead of causing a
+        //         confusing shortfall later. Accounting stays sourced from real balance.
+        uint256 balBefore = IERC20(asset()).balanceOf(address(this));
         IStrategyAdapter(activeAdapter).withdraw(toWithdraw, address(this));
-        _totalDebt = _totalDebt > toWithdraw ? _totalDebt - toWithdraw : 0;
+        uint256 received = IERC20(asset()).balanceOf(address(this)) - balBefore;
+        require(received >= toWithdraw, "VAULT: adapter shortfall");
+        _totalDebt = _totalDebt > received ? _totalDebt - received : 0;
     }
 
     // =========================================
@@ -256,7 +268,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     /// @notice Switch the active strategy adapter
     /// @dev Recalls 100% of assets from old adapter first.
     ///      Deploys to new adapter immediately after switch.
-    function setAdapter(address newAdapter) external override onlyGovernance {
+    function setAdapter(address newAdapter) external override onlyGovernance nonReentrant {
         // H-1: Enforce registry whitelist when a registry is configured.
         //      address(0) is allowed (pauses the strategy) and bypasses the check.
         if (newAdapter != address(0) && adapterRegistry != address(0)) {
@@ -351,14 +363,22 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // Governance: Emergency Shutdown
     // =========================================
 
-    function setEmergencyShutdown(bool active) external override onlyGovernance {
+    function setEmergencyShutdown(bool active) external override onlyGovernance nonReentrant {
+        // A: set the flag FIRST so shutdown always takes effect, then attempt the
+        //    recall in try/catch. A frozen/broken adapter must not be able to brick
+        //    the emergency valve. activeAdapter is unchanged, so on catch the funds
+        //    stay counted in totalAssets() and are recoverable once the adapter
+        //    unfreezes (users withdraw via _recallFromAdapter; deposits are blocked).
         emergencyShutdown = active;
         if (active && activeAdapter != address(0)) {
             // Recall all assets to vault for safe withdrawal by users
             uint256 adapterBal = IStrategyAdapter(activeAdapter).totalAssets();
             if (adapterBal > 0) {
-                IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this));
-                _totalDebt = 0;
+                try IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this)) {
+                    _totalDebt = 0;
+                } catch {
+                    emit AdapterRecallFailed(activeAdapter, adapterBal);
+                }
             }
         }
         emit EmergencyShutdown(active);

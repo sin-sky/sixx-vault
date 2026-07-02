@@ -89,4 +89,8 @@ interface ISIXXVault is IERC4626 {
     /// @dev M-3: Emitted when an adapter reverts during deposit; the vault
     ///      rolls the transfer back so funds stay idle in the vault.
     event AdapterDepositFailed(address indexed adapter, uint256 amount);
+    /// @dev A: Emitted when the recall of assets fails during emergency shutdown;
+    ///      the shutdown still takes effect (activeAdapter unchanged, funds remain
+    ///      counted and recoverable once the adapter unfreezes).
+    event AdapterRecallFailed(address indexed adapter, uint256 amount);
 }

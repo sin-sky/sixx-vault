@@ -81,6 +81,29 @@ contract Deploy is Script {
         );
     }
 
+    /// @dev C-1 audit follow-up (Critical): adapters are initialized with the
+    ///      Timelock as governance, NEVER the hot deployer key. Extracted into
+    ///      helpers so DeployWiring tests can assert adapter.governance() ==
+    ///      address(timelock) against the script's own construction path.
+    function _newAaveAdapter(
+        address usdc,
+        address aavePool,
+        address aUsdc,
+        address vault_,
+        address governance_
+    ) internal returns (AaveV3USDCAdapter) {
+        return new AaveV3USDCAdapter(usdc, aavePool, aUsdc, vault_, governance_, 0);
+    }
+
+    function _newVenusAdapter(
+        address usdt,
+        address vUsdt,
+        address vault_,
+        address governance_
+    ) internal returns (VenusUSDTAdapter) {
+        return new VenusUSDTAdapter(usdt, vUsdt, vault_, governance_);
+    }
+
     function run() external {
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         address deployer   = vm.addr(deployerPk);
@@ -177,8 +200,9 @@ contract Deploy is Script {
         console2.log("Registry    :", address(registry));
         console2.log("SIXXVault   :", address(vault));
 
-        AaveV3USDCAdapter adapter = new AaveV3USDCAdapter(
-            usdc, aavePool, aUsdc, address(vault), deployer, 0
+        // C-1 (Critical): adapter governance = Timelock, not the hot deployer key.
+        AaveV3USDCAdapter adapter = _newAaveAdapter(
+            usdc, aavePool, aUsdc, address(vault), address(timelock)
         );
         console2.log("Adapter     :", address(adapter));
 
@@ -215,8 +239,9 @@ contract Deploy is Script {
         console2.log("Registry    :", address(registry));
         console2.log("SIXXVault   :", address(vault));
 
-        VenusUSDTAdapter adapter = new VenusUSDTAdapter(
-            usdt, vUsdt, address(vault), deployer
+        // C-1 (Critical): adapter governance = Timelock, not the hot deployer key.
+        VenusUSDTAdapter adapter = _newVenusAdapter(
+            usdt, vUsdt, address(vault), address(timelock)
         );
         console2.log("Adapter     :", address(adapter));
 

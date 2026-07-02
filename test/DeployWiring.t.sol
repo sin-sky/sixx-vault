@@ -6,8 +6,24 @@ import {TimelockController} from "@openzeppelin/contracts/governance/TimelockCon
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
+import {AaveV3USDCAdapter} from "../src/adapters/AaveV3USDCAdapter.sol";
+import {VenusUSDTAdapter} from "../src/adapters/VenusUSDTAdapter.sol";
 import {Deploy} from "../script/Deploy.s.sol";
 import {MockUSDC} from "./SIXXVault.t.sol";
+
+/// @dev Minimal Venus vToken stub: the adapter constructor only needs
+///      underlying() to match the asset (and an ERC20 to forceApprove).
+contract MockVToken {
+    address public immutable underlyingAsset;
+
+    constructor(address underlying_) {
+        underlyingAsset = underlying_;
+    }
+
+    function underlying() external view returns (address) {
+        return underlyingAsset;
+    }
+}
 
 /// @dev Exposes Deploy's internal wiring helpers as external functions so
 ///      tests can exercise the SCRIPT's actual code paths (not a re-implementation).
@@ -23,6 +39,25 @@ contract DeployHarness is Deploy {
         address safe_
     ) external returns (TimelockController, AdapterRegistry, SIXXVault) {
         return _deployCore(asset_, name_, symbol_, safe_);
+    }
+
+    function newAaveAdapter(
+        address usdc,
+        address aavePool,
+        address aUsdc,
+        address vault_,
+        address governance_
+    ) external returns (AaveV3USDCAdapter) {
+        return _newAaveAdapter(usdc, aavePool, aUsdc, vault_, governance_);
+    }
+
+    function newVenusAdapter(
+        address usdt,
+        address vUsdt,
+        address vault_,
+        address governance_
+    ) external returns (VenusUSDTAdapter) {
+        return _newVenusAdapter(usdt, vUsdt, vault_, governance_);
     }
 }
 
@@ -73,5 +108,29 @@ contract DeployWiringTest is Test {
             harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr);
 
         assertEq(timelock.getMinDelay(), 48 hours);
+    }
+
+    /// @notice C-1 audit follow-up (Critical): both chain adapters must be
+    ///         governed by the Timelock, never the hot deployer key. Exercises
+    ///         the script's own adapter-construction helpers.
+    function test_adapters_governed_by_timelock_not_deployer() public {
+        (TimelockController timelock,, SIXXVault vault) =
+            harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr);
+
+        // Aave adapter: pool/aToken only need to be non-zero (constructor
+        // forceApproves the pool on the asset; it makes no call into them).
+        AaveV3USDCAdapter aave = harness.newAaveAdapter(
+            address(usdc), address(0xA00E), address(0xA70C), address(vault), address(timelock)
+        );
+        assertEq(aave.governance(), address(timelock), "aave adapter governance != timelock");
+        assertTrue(aave.governance() != deployer, "aave adapter must not be deployer-governed");
+
+        // Venus adapter: needs a vToken whose underlying() == asset.
+        MockVToken vusdt = new MockVToken(address(usdc));
+        VenusUSDTAdapter venus = harness.newVenusAdapter(
+            address(usdc), address(vusdt), address(vault), address(timelock)
+        );
+        assertEq(venus.governance(), address(timelock), "venus adapter governance != timelock");
+        assertTrue(venus.governance() != deployer, "venus adapter must not be deployer-governed");
     }
 }

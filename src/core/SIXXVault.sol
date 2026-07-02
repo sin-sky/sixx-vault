@@ -368,7 +368,12 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // Governance: Emergency Shutdown
     // =========================================
 
-    function setEmergencyShutdown(bool active) external override onlyGovernance nonReentrant {
+    function setEmergencyShutdown(bool active) external override nonReentrant {
+        if (active) {
+            require(msg.sender == guardian || msg.sender == governance, "VAULT: not guardian/gov");
+        } else {
+            require(msg.sender == governance, "VAULT: not governance");
+        }
         // A: set the flag FIRST so shutdown always takes effect, then attempt the
         //    recall in try/catch. A frozen/broken adapter must not be able to brick
         //    the emergency valve. activeAdapter is unchanged, so on catch the funds

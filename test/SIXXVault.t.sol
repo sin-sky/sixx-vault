@@ -623,4 +623,53 @@ contract SIXXVaultTest is Test {
         vault.setGuardian(bob);
         assertEq(vault.guardian(), bob);
     }
+
+    function test_guardian_can_shutdown_on() public {
+        vm.prank(guardianAddr);
+        vault.setEmergencyShutdown(true);
+        assertTrue(vault.emergencyShutdown());
+    }
+
+    function test_guardian_cannot_shutdown_off() public {
+        vm.prank(governance);
+        vault.setEmergencyShutdown(true);
+        vm.prank(guardianAddr);
+        vm.expectRevert(bytes("VAULT: not governance"));
+        vault.setEmergencyShutdown(false);
+    }
+
+    function test_governance_can_toggle_both() public {
+        vm.prank(governance);
+        vault.setEmergencyShutdown(true);
+        assertTrue(vault.emergencyShutdown());
+        vm.prank(governance);
+        vault.setEmergencyShutdown(false);
+        assertFalse(vault.emergencyShutdown());
+    }
+
+    function test_third_party_cannot_shutdown() public {
+        vm.prank(alice);
+        vm.expectRevert(bytes("VAULT: not guardian/gov"));
+        vault.setEmergencyShutdown(true);
+        vm.prank(alice);
+        vm.expectRevert(bytes("VAULT: not governance"));
+        vault.setEmergencyShutdown(false);
+    }
+
+    function test_guardian_shutdown_still_recalls_and_exempts_lock() public {
+        // alice deposits -> funds pushed to adapter, alice locked
+        uint256 amt = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amt);
+        vault.deposit(amt, alice);
+        vm.stopPrank();
+        // guardian triggers shutdown: recall from adapter + lock exemption
+        vm.prank(guardianAddr);
+        vault.setEmergencyShutdown(true);
+        // alice can withdraw immediately despite lock (B), funds were recalled (A)
+        uint256 maxW = vault.maxWithdraw(alice);
+        assertGt(maxW, 0, "lock exempt under shutdown");
+        vm.prank(alice);
+        vault.withdraw(maxW, alice, alice);
+    }
 }

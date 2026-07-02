@@ -68,6 +68,8 @@
 - SHIN 確定＝**Vault と Registry は同一 Timelock を governance に共有**。監査 finding が推奨した「Registry を別 principal に」ではなく、**48h 遅延を独立ブレーキ**とする方式。→ **48h の間にユーザーが exit できることが保護の前提**。
 - **必須の運用要件**：Timelock の `CallScheduled` イベントを監視し、`setAdapter` 等がキューされたらユーザーに周知するアラート bot（finding の推奨と一致）。これが無いと 48h 遅延は形骸化。
 - **残存リスク（監査で opine 対象）**：①Safe が proposer/executor かつ guardian を兼ねるため、Safe 鍵が漏洩すると「悪意 setAdapter を 48h キュー」＋「guardian として緊急停止を拒否」が同一主体で可能。48h は**オフチェーン対応の窓**であり万能でない。②lock 期間中のユーザーは 48h 以内に exit できない場合がある（guardian=攻撃者だと緊急停止による lock 免除も期待できない）。→ より強い形は「Registry を別マルチシグ」or「guardian を Safe と別主体」。本 spec は SHIN 決定（同一 Timelock）に従い、これらを監査論点として明示。
+- **緩和の追加（最終レビュー実装確認・OZ v5.6.1）**：OZ `TimelockController` は **proposer に `CANCELLER_ROLE` も付与**する。よって honest な Safe の 48h 応答は「受動的な user exit」だけでなく **`cancel(opId)` による悪意予約 op の能動的キャンセル**を含む＝上記①の緩和は当初想定より強い。監査申し送りにこの点を含める。
+- **compromised-guardian の回復手順（運用・重要）**：漏洩した guardian は OFF 実行後も同一ブロックで再度 ON を張れるため、単発の `setEmergencyShutdown(false)` では恒久回復しない。**正しい回復＝Timelock バッチで `[setGuardian(新), setEmergencyShutdown(false)]` を原子的に実行**（能力はコード上存在）。この手順を `SAFE_MIGRATION_RUNBOOK` に明記すること（インシデント時に発見するのでなく事前に）。
 
 ## 5. テスト（TDD）
 

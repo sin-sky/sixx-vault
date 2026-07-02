@@ -7,6 +7,7 @@ import {AaveV3USDCAdapter} from "../src/adapters/AaveV3USDCAdapter.sol";
 import {VenusUSDTAdapter} from "../src/adapters/VenusUSDTAdapter.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
 /// @title Deploy
 /// @notice Deploys SIXXVault + AdapterRegistry + a chain-appropriate adapter,
@@ -35,6 +36,27 @@ contract Deploy is Script {
     uint256 internal constant ETH_SEPOLIA = 11155111;
     uint256 internal constant ARB_SEPOLIA = 421614;
     uint256 internal constant BNB_TESTNET = 97;
+
+    uint256 internal constant TIMELOCK_MIN_DELAY = 48 hours;
+
+    /// @dev Chain 2-of-3 Safe = Timelock proposer/executor + Vault guardian.
+    ///      Testnets have no Safe → fall back to the deployer.
+    function _safe(address deployer) internal view returns (address) {
+        if (block.chainid == ETH_MAINNET) return 0x4d71aCE4612AB3B71423b454e21c0Bd03c4F8fE0;
+        if (block.chainid == ARB_ONE)     return 0xd388aC46E7a763d5eaFb73b735292c6A46B5BAC0;
+        if (block.chainid == BNB_MAINNET) return 0x81E85C9F3FdE1ceE38cD3DA9bbAa6212F01D196D;
+        return deployer; // testnets
+    }
+
+    /// @dev Deploy a TimelockController with the Safe as sole proposer+executor,
+    ///      self-administered (admin = address(0)).
+    function _deployTimelock(address safe) internal returns (TimelockController) {
+        address[] memory proposers = new address[](1);
+        address[] memory executors = new address[](1);
+        proposers[0] = safe;
+        executors[0] = safe;
+        return new TimelockController(TIMELOCK_MIN_DELAY, proposers, executors, address(0));
+    }
 
     function run() external {
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
@@ -125,17 +147,21 @@ contract Deploy is Script {
 
         vm.startBroadcast(deployerPk);
 
-        AdapterRegistry registry = new AdapterRegistry(deployer);
+        address safe = _safe(deployer);
+        TimelockController timelock = _deployTimelock(safe);
+        console2.log("Timelock    :", address(timelock));
+
+        AdapterRegistry registry = new AdapterRegistry(address(timelock));
         console2.log("Registry    :", address(registry));
 
         SIXXVault vault = new SIXXVault(
             IERC20(usdc),
             "SIXX Stable Yield",
             "sxUSDC",
-            deployer,
+            address(timelock),
             address(registry),
-            deployer,
-            deployer
+            deployer,      // feeRecipient
+            safe           // guardian
         );
         console2.log("SIXXVault   :", address(vault));
 
@@ -144,8 +170,10 @@ contract Deploy is Script {
         );
         console2.log("Adapter     :", address(adapter));
 
-        registry.registerAdapter(address(adapter), "DeFi", "Aave V3");
-        vault.setAdapter(address(adapter));
+        // NOTE: registry.registerAdapter / vault.setAdapter are now governance-gated
+        // (governance = Timelock). Do the initial adapter wiring via the Timelock
+        // (schedule -> 48h -> execute) from the Safe. See SAFE_MIGRATION_RUNBOOK.
+        console2.log("Adapter (register+setAdapter) pending via Timelock:", address(adapter));
 
         vm.stopBroadcast();
         console2.log("Deploy complete!");
@@ -168,17 +196,21 @@ contract Deploy is Script {
 
         vm.startBroadcast(deployerPk);
 
-        AdapterRegistry registry = new AdapterRegistry(deployer);
+        address safe = _safe(deployer);
+        TimelockController timelock = _deployTimelock(safe);
+        console2.log("Timelock    :", address(timelock));
+
+        AdapterRegistry registry = new AdapterRegistry(address(timelock));
         console2.log("Registry    :", address(registry));
 
         SIXXVault vault = new SIXXVault(
             IERC20(usdt),
             "SIXX Stable Yield USDT",
             "sxUSDT",
-            deployer,
+            address(timelock),
             address(registry),
-            deployer,
-            deployer
+            deployer,      // feeRecipient
+            safe           // guardian
         );
         console2.log("SIXXVault   :", address(vault));
 
@@ -187,8 +219,10 @@ contract Deploy is Script {
         );
         console2.log("Adapter     :", address(adapter));
 
-        registry.registerAdapter(address(adapter), "DeFi", "Venus Protocol");
-        vault.setAdapter(address(adapter));
+        // NOTE: registry.registerAdapter / vault.setAdapter are now governance-gated
+        // (governance = Timelock). Do the initial adapter wiring via the Timelock
+        // (schedule -> 48h -> execute) from the Safe. See SAFE_MIGRATION_RUNBOOK.
+        console2.log("Adapter (register+setAdapter) pending via Timelock:", address(adapter));
 
         vm.stopBroadcast();
         console2.log("Deploy complete!");

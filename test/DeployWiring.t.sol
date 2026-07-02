@@ -20,10 +20,9 @@ contract DeployHarness is Deploy {
         IERC20 asset_,
         string memory name_,
         string memory symbol_,
-        address safe_,
-        address feeRecipient_
+        address safe_
     ) external returns (TimelockController, AdapterRegistry, SIXXVault) {
-        return _deployCore(asset_, name_, symbol_, safe_, feeRecipient_);
+        return _deployCore(asset_, name_, symbol_, safe_);
     }
 }
 
@@ -36,9 +35,8 @@ contract DeployWiringTest is Test {
     DeployHarness harness;
     MockUSDC usdc;
 
-    address deployer     = address(0xD00D);
-    address safeAddr     = address(0x5AFE);
-    address feeRecipient = address(0xFEE);
+    address deployer = address(0xD00D);
+    address safeAddr = address(0x5AFE);
 
     function setUp() public {
         harness = new DeployHarness();
@@ -47,12 +45,13 @@ contract DeployWiringTest is Test {
 
     function test_deployCore_routes_governance_to_timelock() public {
         (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) =
-            harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr, feeRecipient);
+            harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr);
 
         assertEq(vault.governance(), address(timelock), "vault governance != timelock");
         assertEq(registry.governance(), address(timelock), "registry governance != timelock");
         assertEq(vault.guardian(), safeAddr, "vault guardian != safe");
-        assertEq(vault.feeRecipient(), feeRecipient, "vault feeRecipient mismatch");
+        // SHIN decision 2026-07-02: fees accrue to the chain's Safe, not a hot deployer key.
+        assertEq(vault.feeRecipient(), safeAddr, "vault feeRecipient must be the Safe");
     }
 
     function test_safe_addresses_per_chain() public {
@@ -71,7 +70,7 @@ contract DeployWiringTest is Test {
 
     function test_timelock_min_delay_is_48h() public {
         (TimelockController timelock,,) =
-            harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr, feeRecipient);
+            harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr);
 
         assertEq(timelock.getMinDelay(), 48 hours);
     }

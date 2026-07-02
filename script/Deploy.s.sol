@@ -59,13 +59,14 @@ contract Deploy is Script {
     }
 
     /// @dev Core wiring shared by every chain-specific deploy path: Timelock
-    ///      (governance for both registry + vault) and the Safe as guardian.
+    ///      (governance for both registry + vault), and the Safe as BOTH the
+    ///      guardian AND the feeRecipient (SHIN decision 2026-07-02 — fees
+    ///      accrue to the chain's 2-of-3 Safe, never a hot deployer key).
     function _deployCore(
         IERC20 asset_,
         string memory name_,
         string memory symbol_,
-        address safe_,
-        address feeRecipient_
+        address safe_
     ) internal returns (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) {
         timelock = _deployTimelock(safe_);
         registry = new AdapterRegistry(address(timelock));
@@ -75,8 +76,8 @@ contract Deploy is Script {
             symbol_,
             address(timelock),
             address(registry),
-            feeRecipient_, // feeRecipient
-            safe_          // guardian
+            safe_, // feeRecipient = Safe
+            safe_  // guardian = Safe
         );
     }
 
@@ -171,7 +172,7 @@ contract Deploy is Script {
 
         address safe = _safe(deployer);
         (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) =
-            _deployCore(IERC20(usdc), "SIXX Stable Yield", "sxUSDC", safe, deployer);
+            _deployCore(IERC20(usdc), "SIXX Stable Yield", "sxUSDC", safe);
         console2.log("Timelock    :", address(timelock));
         console2.log("Registry    :", address(registry));
         console2.log("SIXXVault   :", address(vault));
@@ -209,7 +210,7 @@ contract Deploy is Script {
 
         address safe = _safe(deployer);
         (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) =
-            _deployCore(IERC20(usdt), "SIXX Stable Yield USDT", "sxUSDT", safe, deployer);
+            _deployCore(IERC20(usdt), "SIXX Stable Yield USDT", "sxUSDT", safe);
         console2.log("Timelock    :", address(timelock));
         console2.log("Registry    :", address(registry));
         console2.log("SIXXVault   :", address(vault));

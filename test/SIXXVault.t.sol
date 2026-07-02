@@ -8,6 +8,7 @@ import {MockAdapter} from "./mocks/MockAdapter.sol";
 import {FaultyAdapter} from "./mocks/FaultyAdapter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ISIXXVault} from "../src/interfaces/ISIXXVault.sol";
 
 /// @dev Minimal mock ERC-20 for unit tests (no fork needed)
 contract MockUSDC is ERC20 {
@@ -22,6 +23,7 @@ contract SIXXVaultTest is Test {
     address alice      = address(0xA11CE);
     address bob        = address(0xB0B);
     address feeRcpt    = address(0xFEE);
+    address guardianAddr = address(0x6042D);
 
     // ─── Contracts ────────────────────────────────────────────
     MockUSDC       usdc;
@@ -48,7 +50,8 @@ contract SIXXVaultTest is Test {
             "sxUSDC",
             governance,
             address(registry),
-            feeRcpt
+            feeRcpt,
+            guardianAddr
         );
 
         // Deploy mock adapter (vault address known now)
@@ -584,5 +587,40 @@ contract SIXXVaultTest is Test {
             "no funds may be stranded in the adapter"
         );
         assertEq(vault.totalAssets(), amount, "totalAssets matches the deposit");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Guardian (C-1)
+    // ─────────────────────────────────────────────────────────
+
+    function test_constructor_reverts_on_zero_guardian() public {
+        vm.expectRevert(bytes("VAULT: zero guardian"));
+        new SIXXVault(
+            IERC20(address(usdc)), "n", "s", governance, address(registry), feeRcpt, address(0)
+        );
+    }
+
+    function test_guardian_initialized() public view {
+        assertEq(vault.guardian(), guardianAddr);
+    }
+
+    function test_setGuardian_only_governance() public {
+        vm.prank(alice);
+        vm.expectRevert(bytes("VAULT: not governance"));
+        vault.setGuardian(bob);
+    }
+
+    function test_setGuardian_rejects_zero() public {
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: zero guardian"));
+        vault.setGuardian(address(0));
+    }
+
+    function test_setGuardian_updates_and_emits() public {
+        vm.expectEmit(true, true, false, false);
+        emit ISIXXVault.GuardianChanged(guardianAddr, bob);
+        vm.prank(governance);
+        vault.setGuardian(bob);
+        assertEq(vault.guardian(), bob);
     }
 }

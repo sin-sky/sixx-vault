@@ -37,6 +37,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     address public override pendingGovernance;
     address public override activeAdapter;
     address public override adapterRegistry;
+    address public override guardian;
 
     uint256 public override lockPeriod;
     uint256 public override performanceFee;
@@ -62,19 +63,23 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     /// @param governance_      Initial governance address (SHIN EOA → Gnosis Safe later)
     /// @param adapterRegistry_ AdapterRegistry contract address (address(0) = permissionless for testing)
     /// @param feeRecipient_    Address receiving management/performance fees
+    /// @param guardian_        Address allowed to trigger emergency shutdown immediately
     constructor(
         IERC20 asset_,
         string memory name_,
         string memory symbol_,
         address governance_,
         address adapterRegistry_,
-        address feeRecipient_
+        address feeRecipient_,
+        address guardian_
     ) ERC4626(asset_) ERC20(name_, symbol_) {
         require(governance_ != address(0), "VAULT: zero governance");
         require(feeRecipient_ != address(0), "VAULT: zero fee recipient");
+        require(guardian_ != address(0), "VAULT: zero guardian");
         governance = governance_;
         adapterRegistry = adapterRegistry_;
         feeRecipient = feeRecipient_;
+        guardian = guardian_;
         _lastHarvestTimestamp = block.timestamp;
     }
 
@@ -399,6 +404,16 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         emit GovernanceAccepted(pendingGovernance);
         governance = pendingGovernance;
         pendingGovernance = address(0);
+    }
+
+    // =========================================
+    // Governance: Guardian
+    // =========================================
+
+    function setGuardian(address newGuardian) external override onlyGovernance {
+        require(newGuardian != address(0), "VAULT: zero guardian");
+        emit GuardianChanged(guardian, newGuardian);
+        guardian = newGuardian;
     }
 
     // =========================================

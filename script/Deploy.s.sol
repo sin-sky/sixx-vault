@@ -134,6 +134,7 @@ contract Deploy is Script {
             "sxUSDC",
             deployer,
             address(registry),
+            deployer,
             deployer
         );
         console2.log("SIXXVault   :", address(vault));
@@ -176,6 +177,7 @@ contract Deploy is Script {
             "sxUSDT",
             deployer,
             address(registry),
+            deployer,
             deployer
         );
         console2.log("SIXXVault   :", address(vault));

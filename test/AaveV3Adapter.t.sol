@@ -27,6 +27,7 @@ abstract contract AaveV3AdapterForkBase is Test {
     address governance = makeAddr("governance");
     address alice      = makeAddr("alice");
     address feeRcpt    = makeAddr("feeRecipient");
+    address guardian   = makeAddr("guardian");
 
     // ─── Contracts ────────────────────────────────────────────
     AdapterRegistry    registry;
@@ -49,7 +50,8 @@ abstract contract AaveV3AdapterForkBase is Test {
             "sxUSDC",
             governance,
             address(registry),
-            feeRcpt
+            feeRcpt,
+            guardian
         );
 
         // Deploy adapter

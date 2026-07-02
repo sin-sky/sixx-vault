@@ -76,6 +76,12 @@ interface ISIXXVault is IERC4626 {
     /// @notice Accept governance transfer (pendingGovernance only)
     function acceptGovernance() external;
 
+    /// @notice The guardian address, allowed to trigger emergency shutdown immediately.
+    function guardian() external view returns (address);
+
+    /// @notice Update the guardian. Governance-only (behind the Timelock).
+    function setGuardian(address newGuardian) external;
+
     // =========================================
     // Events
     // =========================================
@@ -86,6 +92,7 @@ interface ISIXXVault is IERC4626 {
     event FeeCollected(address indexed recipient, uint256 feeShares, uint256 feeAssets);
     event GovernanceProposed(address indexed currentGovernance, address indexed pendingGovernance);
     event GovernanceAccepted(address indexed newGovernance);
+    event GuardianChanged(address indexed oldGuardian, address indexed newGuardian);
     /// @dev M-3: Emitted when an adapter reverts during deposit; the vault
     ///      rolls the transfer back so funds stay idle in the vault.
     event AdapterDepositFailed(address indexed adapter, uint256 amount);

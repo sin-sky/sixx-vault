@@ -497,6 +497,7 @@ contract VenusUSDTAdapterForkTest is Test {
     address governance = makeAddr("governance");
     address alice      = makeAddr("alice");
     address feeRcpt    = makeAddr("feeRecipient");
+    address guardian   = makeAddr("guardian");
 
     // ─── Contracts ────────────────────────────────────────────
     AdapterRegistry  registry;
@@ -516,7 +517,8 @@ contract VenusUSDTAdapterForkTest is Test {
             "sxUSDT",
             governance,
             address(registry),
-            feeRcpt
+            feeRcpt,
+            guardian
         );
 
         adapter = new VenusUSDTAdapter(USDT, VUSDT, address(vault), governance);

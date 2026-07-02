@@ -8,8 +8,24 @@ import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {AaveV3USDCAdapter} from "../src/adapters/AaveV3USDCAdapter.sol";
 import {VenusUSDTAdapter} from "../src/adapters/VenusUSDTAdapter.sol";
+import {IAavePool} from "../src/interfaces/IAavePool.sol";
 import {Deploy} from "../script/Deploy.s.sol";
 import {MockUSDC} from "./SIXXVault.t.sol";
+
+/// @dev Minimal Aave V3 Pool stub: the adapter constructor (post L-5 fix)
+///      checks getReserveData(asset).aTokenAddress == aToken_, so a bare EOA
+///      address no longer suffices as a pool stand-in.
+contract MockAavePoolStub {
+    address public reserveAToken;
+
+    constructor(address aToken_) {
+        reserveAToken = aToken_;
+    }
+
+    function getReserveData(address) external view returns (IAavePool.ReserveData memory data) {
+        data.aTokenAddress = reserveAToken;
+    }
+}
 
 /// @dev Minimal Venus vToken stub: the adapter constructor only needs
 ///      underlying() to match the asset (and an ERC20 to forceApprove).
@@ -117,10 +133,12 @@ contract DeployWiringTest is Test {
         (TimelockController timelock,, SIXXVault vault) =
             harness.deployCore(IERC20(address(usdc)), "n", "s", safeAddr);
 
-        // Aave adapter: pool/aToken only need to be non-zero (constructor
-        // forceApproves the pool on the asset; it makes no call into them).
+        // Aave adapter: pool must be a real stub since the constructor (L-5
+        // fix) now calls getReserveData(asset) to verify the aToken binding.
+        address aToken = address(0xA70C);
+        MockAavePoolStub aavePool = new MockAavePoolStub(aToken);
         AaveV3USDCAdapter aave = harness.newAaveAdapter(
-            address(usdc), address(0xA00E), address(0xA70C), address(vault), address(timelock)
+            address(usdc), address(aavePool), aToken, address(vault), address(timelock)
         );
         assertEq(aave.governance(), address(timelock), "aave adapter governance != timelock");
         assertTrue(aave.governance() != deployer, "aave adapter must not be deployer-governed");

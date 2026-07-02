@@ -65,6 +65,7 @@ contract AaveV3USDCAdapter is IStrategyAdapter, ReentrancyGuard {
     event VaultAccepted(address indexed newVault);
     event GovernanceProposed(address indexed currentGovernance, address indexed pendingGovernance);
     event GovernanceAccepted(address indexed newGovernance);
+    event TokenRescued(address indexed token, address indexed to, uint256 amount);
 
     // =========================================
     // Constructor
@@ -89,6 +90,10 @@ contract AaveV3USDCAdapter is IStrategyAdapter, ReentrancyGuard {
         require(aToken_     != address(0), "ADAPTER: zero aToken");
         require(vault_      != address(0), "ADAPTER: zero vault");
         require(governance_ != address(0), "ADAPTER: zero governance");
+        require(
+            IAavePool(aavePool_).getReserveData(asset_).aTokenAddress == aToken_,
+            "ADAPTER: aToken/pool mismatch"
+        );
 
         asset        = asset_;
         aavePool     = IAavePool(aavePool_);
@@ -153,7 +158,7 @@ contract AaveV3USDCAdapter is IStrategyAdapter, ReentrancyGuard {
     }
 
     /// @notice aUSDC auto-compounds — harvest is a no-op
-    function harvest() external override returns (uint256) {
+    function harvest() external override onlyVault returns (uint256) {
         emit Harvested(0);
         return 0;
     }
@@ -253,5 +258,20 @@ contract AaveV3USDCAdapter is IStrategyAdapter, ReentrancyGuard {
         emit GovernanceAccepted(pendingGovernance);
         governance = pendingGovernance;
         pendingGovernance = address(0);
+    }
+
+    // =========================================
+    // ADP-2: Token Rescue
+    // =========================================
+
+    /// @notice Recover tokens accidentally sent to this adapter. Cannot touch the
+    ///         yield-bearing position (aToken), so user principal is never at risk.
+    function rescueToken(address token, address to) external returns (uint256 amount) {
+        require(msg.sender == governance, "ADAPTER: not governance");
+        require(to != address(0), "ADAPTER: zero recipient");
+        require(token != address(aToken), "ADAPTER: cannot rescue position");
+        amount = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransfer(to, amount);
+        emit TokenRescued(token, to, amount);
     }
 }

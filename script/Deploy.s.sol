@@ -58,6 +58,28 @@ contract Deploy is Script {
         return new TimelockController(TIMELOCK_MIN_DELAY, proposers, executors, address(0));
     }
 
+    /// @dev Core wiring shared by every chain-specific deploy path: Timelock
+    ///      (governance for both registry + vault) and the Safe as guardian.
+    function _deployCore(
+        IERC20 asset_,
+        string memory name_,
+        string memory symbol_,
+        address safe_,
+        address feeRecipient_
+    ) internal returns (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) {
+        timelock = _deployTimelock(safe_);
+        registry = new AdapterRegistry(address(timelock));
+        vault = new SIXXVault(
+            asset_,
+            name_,
+            symbol_,
+            address(timelock),
+            address(registry),
+            feeRecipient_, // feeRecipient
+            safe_          // guardian
+        );
+    }
+
     function run() external {
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
         address deployer   = vm.addr(deployerPk);
@@ -148,21 +170,10 @@ contract Deploy is Script {
         vm.startBroadcast(deployerPk);
 
         address safe = _safe(deployer);
-        TimelockController timelock = _deployTimelock(safe);
+        (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) =
+            _deployCore(IERC20(usdc), "SIXX Stable Yield", "sxUSDC", safe, deployer);
         console2.log("Timelock    :", address(timelock));
-
-        AdapterRegistry registry = new AdapterRegistry(address(timelock));
         console2.log("Registry    :", address(registry));
-
-        SIXXVault vault = new SIXXVault(
-            IERC20(usdc),
-            "SIXX Stable Yield",
-            "sxUSDC",
-            address(timelock),
-            address(registry),
-            deployer,      // feeRecipient
-            safe           // guardian
-        );
         console2.log("SIXXVault   :", address(vault));
 
         AaveV3USDCAdapter adapter = new AaveV3USDCAdapter(
@@ -197,21 +208,10 @@ contract Deploy is Script {
         vm.startBroadcast(deployerPk);
 
         address safe = _safe(deployer);
-        TimelockController timelock = _deployTimelock(safe);
+        (TimelockController timelock, AdapterRegistry registry, SIXXVault vault) =
+            _deployCore(IERC20(usdt), "SIXX Stable Yield USDT", "sxUSDT", safe, deployer);
         console2.log("Timelock    :", address(timelock));
-
-        AdapterRegistry registry = new AdapterRegistry(address(timelock));
         console2.log("Registry    :", address(registry));
-
-        SIXXVault vault = new SIXXVault(
-            IERC20(usdt),
-            "SIXX Stable Yield USDT",
-            "sxUSDT",
-            address(timelock),
-            address(registry),
-            deployer,      // feeRecipient
-            safe           // guardian
-        );
         console2.log("SIXXVault   :", address(vault));
 
         VenusUSDTAdapter adapter = new VenusUSDTAdapter(

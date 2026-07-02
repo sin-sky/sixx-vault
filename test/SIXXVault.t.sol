@@ -284,6 +284,34 @@ contract SIXXVaultTest is Test {
         vault.redeem(shares, alice, alice);
     }
 
+    /// Medium-A: setAdapter migration applies the same M13-16 balance-delta guard
+    ///           as _recallFromAdapter — if the OLD adapter under-delivers on the
+    ///           full recall, the switch reverts instead of stranding funds.
+    function test_setAdapter_reverts_on_adapter_shortfall() public {
+        FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(faulty), "Test", "Faulty");
+        vault.setAdapter(address(faulty)); // migrate mock -> faulty (no funds yet)
+        vm.stopPrank();
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // funds now held by the faulty adapter
+        vm.stopPrank();
+
+        assertGt(faulty.totalAssets(), 0, "faulty holds funds");
+        faulty.setDeliverBps(9_000); // under-deliver 90% on the migration recall
+
+        // Migrating to a fresh adapter must revert because the old one shorts the recall.
+        MockAdapter fresh = new MockAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(fresh), "DeFi", "Mock v2");
+        vm.expectRevert(bytes("VAULT: adapter shortfall"));
+        vault.setAdapter(address(fresh));
+        vm.stopPrank();
+    }
+
     // ─────────────────────────────────────────────────────────
     // Adapter Switch
     // ─────────────────────────────────────────────────────────

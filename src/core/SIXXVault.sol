@@ -287,7 +287,15 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         if (activeAdapter != address(0)) {
             uint256 adapterBal = IStrategyAdapter(activeAdapter).totalAssets();
             if (adapterBal > 0) {
+                // M13-16 (Medium-A): apply the same balance-delta guard as
+                //         _recallFromAdapter. Measure the real amount received and
+                //         require it covers the full recall, so an adapter that
+                //         silently under-delivers during migration reverts here
+                //         instead of letting the vault switch away with funds stranded.
+                uint256 balBefore = IERC20(asset()).balanceOf(address(this));
                 IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this));
+                uint256 received = IERC20(asset()).balanceOf(address(this)) - balBefore;
+                require(received >= adapterBal, "VAULT: adapter shortfall");
             }
             _totalDebt = 0;
         }

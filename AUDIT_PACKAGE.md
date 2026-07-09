@@ -81,8 +81,9 @@ forge test --fork-url $BNB_RPC_URL --match-contract VenusUSDTAdapterForkTest   #
 
 ## 6. 静的解析（Slither）
 
-- **triage 済**（最終カウント High 3 / Medium 16 / Low 18 / Info 1 / Opt 3＝全て FP or 意図的。判定は `PRE_AUDIT_HARDENING.md §Slither triage` に逐条）。
-- ⚠️ **Slither JSON の再生成は open**：現作業環境（Codespace）に slither/solc 未導入のため本コミットでの JSON 添付は未生成。**監査提出前に slither-equipped 環境で `slither . --json slither.json` を再実行し添付**すること（triage 結論は前回から不変の見込みだが、凍結コミット `3d55dc5` に対する再走で確定）。
+- ✅ **凍結コミット `3d55dc5` に対し再走・JSON 添付済**（slither **0.11.5**・`slither-3d55dc5.json`・`--filter-paths "lib/|test/|script/"`）。
+- **最終カウント：High 4 / Medium 16 / Low 18 / Info 1 / Opt 3 = 42**（confidence: High 12 / Medium 30）。**全て FP or 意図的**（逐条判定は `PRE_AUDIT_HARDENING.md §Slither triage`）。
+- **前回（41）からの差分＝reentrancy-balance が 3→4**：増分は `SIXXVault.setAdapter`（Medium-A の balance-delta 移行ガード）で、`_recallFromAdapter`/`VenusUSDTAdapter.withdraw` と同じ**防御的 balanceOf 差分計測**。onlyGovernance＋nonReentrant 配下・外部先は Aave/Venus/標準 USDC/USDT（コールバック無し）＝攻撃者コードに制御が渡らない＝**同一 FP 類型**。triage 結論は不変。
 
 ---
 
@@ -99,6 +100,6 @@ forge test --fork-url $BNB_RPC_URL --match-contract VenusUSDTAdapterForkTest   #
 - [x] スコープ確定（USD 系4コア＋interface・ERC4626Adapter は別ラウンド）
 - [x] 全フォーク green（ETH/ARB Aave・BNB Venus）＋非フォーク 92 pass
 - [x] 監査前ハードニング記録（`PRE_AUDIT_HARDENING.md`）
-- [ ] **Slither JSON 再生成（要 slither 環境・凍結コミットに対して）**
-- [ ] 前回監査レポート（H-*/M-* 原本）の同梱
+- [x] **Slither JSON 再生成（`slither-3d55dc5.json`・slither 0.11.5・凍結コミット `3d55dc5`）**
+- [ ] 前回監査レポート（H-*/M-* 原本）の同梱 ← **要ファイル所在（SHIN or リポ外）**
 - [ ] **監査ベンダー選定・見積・提出可否（要 SHIN＝コスト/対外）**

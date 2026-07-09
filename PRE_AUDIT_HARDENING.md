@@ -23,7 +23,9 @@
   - ※過去「未実行」だった真因＝Alchemy App でネットワーク未有効化（403「network not enabled」）。キー無効ではなく、dashboard で ARB_MAINNET / BNB_MAINNET を有効化して解消。→ **監査/デプロイ前フォークブロッカーは全消化**。
 
 ## Slither triage（最終・lib/test 除外）
-最終カウント: **High 3 / Medium 16 / Low 18 / Info 1 / Opt 3**。判定:
+最終カウント: **High 3 / Medium 16 / Low 18 / Info 1 / Opt 3**（2026-07-02 時点）。
+> 🔄 **2026-07-09 再走（凍結コミット `3d55dc5`・slither 0.11.5・JSON=`slither-3d55dc5.json`）＝High 4 / Medium 16 / Low 18 / Info 1 / Opt 3 = 42**。差分は reentrancy-balance 3→4＝増分は `SIXXVault.setAdapter`（Medium-A の balance-delta 移行ガード・下記 High 節と同じ防御的 balanceOf 差分計測・onlyGovernance＋nonReentrant＝同一 FP）。**triage 結論は不変**。
+判定:
 
 - **High ×3（全て `reentrancy-balance`・確定 FP）**: `SIXXVault._recallFromAdapter`（M13-16 の受領差分計測）と `VenusUSDTAdapter.withdraw`（drain-all の受領計測）。いずれも **(1) 全経路が nonReentrant 配下**（vault 公開入口＋governance 関数＋adapter に nonReentrant 付与済）、**(2) 外部先は Aave/Venus と標準 USDC/USDT（コールバック無し）＝攻撃者コードに制御が渡らない**、**(3) balanceOf 差分は受領額を正しく測る防御的計測**。read-only reentrancy も成立せず（攻撃者 external call が無い）。※slither の reentrancy-balance は nonReentrant 修飾子を考慮しないため残るが実リスク無し。アーキテクト独立検証で FP 確定。
 - **Medium 16**: `incorrect-equality`（Venus の `require(redeem()==0)`＝成功コード規約／enum 比較／ゼロガード＝FP）・`uninitialized-local`（uint 0 初期化カウンタ＝FP）・`reentrancy-no-eth`(setAdapter＝onlyGovernance+nonReentrant)・`divide-before-multiply`/`incorrect-equality` @ collectFees（**M-1** の意図的希薄化式）・`unused-return`（受領は balanceOf 差分で検証するため adapter 戻り値は意図的に不使用）。**全て FP or 意図的**。

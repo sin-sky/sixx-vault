@@ -17,9 +17,10 @@
 ※ **setAdapter は直接呼びのまま**（recall 失敗時は revert が正＝資産 stranding を防ぐ。破損 adapter からの脱出は緊急停止が担う）。アーキ検証で合意。
 
 ## 検証
-- **forge 非フォークテスト = 61 pass**（新規3件含む: `test_emergency_shutdown_waives_lock`[B] / `test_emergency_shutdown_succeeds_when_recall_reverts`[A] / `test_recall_reverts_on_adapter_shortfall`[M13-16]。faulty mock=`test/mocks/FaultyAdapter.sol`）。
+- **forge 非フォークテスト = 92 pass**（旧記録 61 から増。Timelock/guardian・Venus unit・rescue 等の追加分込み。faulty mock=`test/mocks/FaultyAdapter.sol`）。
 - **Ethereum Aave フォークテスト = 6 pass**（`test_emergency_shutdown_full_flow` 含む＝C のフル drain を実 Aave 状態で検証）。
-- **未実行**: Arbitrum Aave / BNB Venus フォーク（Alchemy app で該当ネットワーク未有効化＝403）。→ **監査/デプロイ前に、対象ネットワーク有効な RPC で実行要**（`forge test --fork-url $ARB_RPC_URL --match-contract AaveV3AdapterForkTest` 等）。Venus dust 修正自体は既に BNB フォークで RED→GREEN 済（`e8ed86a`）。
+- **✅ 全フォーク実走完了（2026-07-09・forge 1.7.1）**: Alchemy 実 RPC で3 suite すべて green＝**Arbitrum Aave フォーク 6 pass**（APY 実測 248bps）／**BNB Venus フォーク 7 pass**（round-trip・emergency shutdown・full-exit-not-trapped・yield accrual・APY 35bps）／**Ethereum Aave フォーク 6 pass**。
+  - ※過去「未実行」だった真因＝Alchemy App でネットワーク未有効化（403「network not enabled」）。キー無効ではなく、dashboard で ARB_MAINNET / BNB_MAINNET を有効化して解消。→ **監査/デプロイ前フォークブロッカーは全消化**。
 
 ## Slither triage（最終・lib/test 除外）
 最終カウント: **High 3 / Medium 16 / Low 18 / Info 1 / Opt 3**。判定:
@@ -29,6 +30,6 @@
 - **据置＋監査に文脈提示**: `performanceFee` は settable だが未使用（CLAUDE.md 明記の dead code・意図明示 or 削除は監査判断）。非標準/fee-on-transfer トークン非対応（実装制約＝標準・非 rebasing・fee-off のみ）。ERC4626 first-depositor は `_decimalsOffset()=9` で緩和済。
 
 ## 次
-- Arb/BNB フォークテストを有効 RPC で実行（デプロイ前）。
+- ~~Arb/BNB フォークテストを有効 RPC で実行（デプロイ前）。~~ ✅ **完了（2026-07-09・上記「検証」参照＝3 suite 全 green）**。
 - 外部監査に本書＋Slither JSON＋前回監査の H-*/M-* を添付。
 - 監査 → 修正 → 再監査 → mainnet 再デプロイ（Venus dust 修正 `e8ed86a` と本バッチをまとめて・Safe 2-of-3 の `setAdapter` 移行）。

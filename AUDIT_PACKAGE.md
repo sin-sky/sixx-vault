@@ -101,5 +101,5 @@ forge test --fork-url $BNB_RPC_URL --match-contract VenusUSDTAdapterForkTest   #
 - [x] 全フォーク green（ETH/ARB Aave・BNB Venus）＋非フォーク 92 pass
 - [x] 監査前ハードニング記録（`PRE_AUDIT_HARDENING.md`）
 - [x] **Slither JSON 再生成（`slither-3d55dc5.json`・slither 0.11.5・凍結コミット `3d55dc5`）**
-- [ ] 前回監査レポート（H-*/M-* 原本）の同梱 ← **要ファイル所在（SHIN or リポ外）**
-- [ ] **監査ベンダー選定・見積・提出可否（要 SHIN＝コスト/対外）**
+- [x] 前回監査レポート（H-*/M-* 原本）の所在確定＝`sixx-workspace/threads/code_audit/`（`AUDIT_FIXPLAN_sixx_vault_2026-05-21.md`＝H-1..H-4/M-1 fix plan／`AUDIT_REPORT_local_reaudit_2026-05-03.md`／`AUDIT_REPORT_step_4.md`・`step_5.md`・`step_5_reaudit.md`）。提出バンドルにこの thread を同梱。
+- [ ] **監査ベンダー選定・見積・提出可否（要 SHIN＝コスト/対外＝ADR-004 open①）** ← 唯一の残ゲート

@@ -273,7 +273,9 @@ contract PendlePTAdapterUnitTest is Test {
     function test_totalAssets_marksAtTWAP() public {
         _deposit(10_000e6);
         uint256 ptBal = pt.balanceOf(address(adapter));
-        uint256 expected = (ptBal * PT_RATE / 1e18) / 1e12; // USDe(18)->USDC(6)
+        // TWAP-capped USDe mark, recall-haircut applied, then USDe(18)->USDC(6).
+        uint256 usdeVal = (ptBal * PT_RATE) / 1e18;
+        uint256 expected = (usdeVal * (10_000 - adapter.recallHaircutBps())) / 10_000 / 1e12;
         assertEq(adapter.totalAssets(), expected);
     }
 
@@ -281,7 +283,8 @@ contract PendlePTAdapterUnitTest is Test {
         _deposit(10_000e6);
         uint256 ptBal = pt.balanceOf(address(adapter));
         oracle.setRate(1.2e18); // TWAP now above par → must clamp to 1e18
-        uint256 expectedPar = (ptBal * 1e18 / 1e18) / 1e12;
+        uint256 usdeVal = (ptBal * 1e18) / 1e18;
+        uint256 expectedPar = (usdeVal * (10_000 - adapter.recallHaircutBps())) / 10_000 / 1e12;
         assertEq(adapter.totalAssets(), expectedPar);
     }
 
@@ -390,8 +393,10 @@ contract PendlePTAdapterUnitTest is Test {
         _deposit(20_000e6);
         uint256 ptBal = pt.balanceOf(address(adapter));
         vm.warp(expiryTs + 1);
-        // Par mark == PT notional in USDC.
-        assertEq(adapter.totalAssets(), ptBal / 1e12);
+        // Par mark == PT notional in USDC, recall-haircut applied (the sUSDe->USDC
+        // exit leg still carries slippage post-maturity, so the haircut stays).
+        uint256 expectedPar = (ptBal * (10_000 - adapter.recallHaircutBps())) / 10_000 / 1e12;
+        assertEq(adapter.totalAssets(), expectedPar);
         uint256 got = adapter.withdraw(type(uint256).max, recipient);
         assertGt(got, (20_000e6 * 99) / 100); // ~principal at par (par swapper)
         assertEq(pt.balanceOf(address(adapter)), 0);
@@ -466,6 +471,73 @@ contract PendlePTAdapterUnitTest is Test {
         vm.prank(stranger);
         vm.expectRevert(bytes("ADAPTER: not governance"));
         adapter.setSlippageBps(10);
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // setRecallHaircutBps + haircut/floor equality (escalate#1)
+    // ─────────────────────────────────────────────────────────────
+
+    function test_ctor_recallHaircutDefault() public view {
+        assertEq(adapter.recallHaircutBps(), 50); // 0.5% default
+    }
+
+    function test_setRecallHaircut_updates() public {
+        vm.prank(governance);
+        adapter.setRecallHaircutBps(120);
+        assertEq(adapter.recallHaircutBps(), 120);
+    }
+
+    function test_setRecallHaircut_capEnforced() public {
+        vm.prank(governance);
+        vm.expectRevert(bytes("ADAPTER: haircut too high"));
+        adapter.setRecallHaircutBps(301); // > MAX_RECALL_HAIRCUT_BPS (300)
+    }
+
+    function test_setRecallHaircut_onlyGovernance() public {
+        vm.prank(stranger);
+        vm.expectRevert(bytes("ADAPTER: not governance"));
+        adapter.setRecallHaircutBps(10);
+    }
+
+    /// @dev A-parity core: a full exit realizes >= the reported NAV for a range of
+    ///      haircuts, so the vault's `received >= toWithdraw` guard always holds.
+    function test_withdraw_fullExit_realizesReportedNAV_acrossHaircuts() public {
+        uint256[3] memory haircuts = [uint256(0), 50, 300];
+        for (uint256 i = 0; i < haircuts.length; i++) {
+            _deployGraph();
+            adapter = new PendlePTAdapter(
+                address(usdc), address(market), address(router), address(oracle),
+                address(swapper), TWAP, address(this), governance
+            );
+            susde.mint(address(router), 5_000_000e18);
+            usde.mint(address(swapper), 5_000_000e18);
+            usdc.mint(address(swapper), 5_000_000e6);
+            susde.mint(address(swapper), 5_000_000e18);
+            vm.prank(governance);
+            adapter.setRecallHaircutBps(haircuts[i]);
+
+            _deposit(20_000e6);
+            uint256 nav = adapter.totalAssets();
+            uint256 got = adapter.withdraw(type(uint256).max, recipient);
+            assertGe(got, nav, "full exit realized below reported NAV");
+            assertEq(pt.balanceOf(address(adapter)), 0, "PT not drained");
+        }
+    }
+
+    /// @dev Fail-close valve: if the exit route cannot realize the reported NAV
+    ///      (haircut too tight for the actual slippage), the whole withdraw reverts
+    ///      and no funds move — the vault guard is never silently shorted.
+    function test_withdraw_fullExit_reverts_whenHaircutTooTight() public {
+        _deposit(20_000e6);
+        // 0 haircut => full-exit floor == un-haircut mark; a 1% swapper skim then
+        // can't meet it.
+        vm.prank(governance);
+        adapter.setRecallHaircutBps(0);
+        swapper.setHaircutBps(100); // 1%
+        vm.expectRevert(bytes("MockPBSwapper: min out"));
+        adapter.withdraw(type(uint256).max, recipient);
+        // Position untouched (revert rolled back the burn).
+        assertGt(pt.balanceOf(address(adapter)), 0, "position must survive a fail-close");
     }
 
     // ─────────────────────────────────────────────────────────────

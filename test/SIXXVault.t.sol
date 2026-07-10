@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Test, console2} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {MockAdapter} from "./mocks/MockAdapter.sol";
@@ -576,6 +577,151 @@ contract SIXXVaultTest is Test {
             2,
             "post-mint feeRecipient stake must equal accrued feeAssets"
         );
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // collectFees — elapsed == 0 path (mutation #42 regression guard)
+    //   `if (elapsed == 0) return 0;` short-circuits fee accrual when no time
+    //   has passed. These pin the observable behaviour: no fee, no mint, no
+    //   revert, and no corruption of the last-harvest accounting.
+    // ─────────────────────────────────────────────────────────
+
+    /// @notice Collecting in the same block as the last harvest (elapsed == 0)
+    ///         mints nothing, returns 0, and does not roll back / double-count accrual.
+    function test_collectFees_zeroElapsed_deployTime_noop() public {
+        vm.prank(governance);
+        vault.setManagementFee(100); // 1% per year
+
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        uint256 feeBefore    = vault.balanceOf(feeRcpt);
+        uint256 supplyBefore = vault.totalSupply();
+
+        // No time has passed since the constructor set _lastHarvestTimestamp.
+        uint256 minted = vault.collectFees();
+
+        assertEq(minted, 0, "elapsed==0 must mint 0 shares");
+        assertEq(vault.balanceOf(feeRcpt), feeBefore, "feeRecipient balance unchanged");
+        assertEq(vault.totalSupply(), supplyBefore, "totalSupply unchanged");
+
+        // Accrual must not have been corrupted: a full year later collects a full
+        // year's fee (≈1%), proving the last-harvest anchor was left at deploy time,
+        // not silently advanced or rewound by the zero-elapsed call.
+        vm.warp(block.timestamp + 365 days + 6 hours);
+        uint256 mintedYear = vault.collectFees();
+        assertGt(mintedYear, 0, "one year later a fee is collected");
+        uint256 feeAssets = vault.convertToAssets(vault.balanceOf(feeRcpt));
+        assertApproxEqRel(feeAssets, 100 * USDC_6, 0.01e18, "~1% of 10k after one year");
+    }
+
+    /// @notice A second collectFees in the same block as a successful collect is a no-op.
+    function test_collectFees_doubleCollect_sameBlock_secondNoop() public {
+        vm.prank(governance);
+        vault.setManagementFee(100);
+
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 365 days + 6 hours);
+        uint256 first = vault.collectFees();
+        assertGt(first, 0, "first collect mints a year's fee");
+
+        uint256 feeAfterFirst = vault.balanceOf(feeRcpt);
+
+        // Same block → elapsed == 0 → must mint nothing more.
+        uint256 second = vault.collectFees();
+        assertEq(second, 0, "second same-block collect mints 0");
+        assertEq(vault.balanceOf(feeRcpt), feeAfterFirst, "no double fee in same block");
+    }
+
+    /// @notice Boundary: one second of elapsed time yields a minimal, non-zero pro-rated fee.
+    function test_collectFees_oneSecondElapsed_minimalProRata() public {
+        vm.prank(governance);
+        vault.setManagementFee(100);
+
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1); // smallest possible positive elapsed
+        uint256 minted = vault.collectFees();
+
+        assertGt(minted, 0, "1s elapsed must accrue a minimal fee (not short-circuited)");
+        // And it must be tiny relative to a full year's ~100 USDC.
+        uint256 feeAssets = vault.convertToAssets(vault.balanceOf(feeRcpt));
+        assertLt(feeAssets, 1 * USDC_6, "1s fee is dust vs a year's fee");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Additional mutation-kill regression guards (audit/MUTATION_TRIAGE.md)
+    // ─────────────────────────────────────────────────────────
+
+    /// @notice setPerformanceFee enforces the hard cap MAX_PERFORMANCE_FEE (3000 bps).
+    ///         Kills the RequireMutation that weakens `newFee <= MAX_PERFORMANCE_FEE` to `true`.
+    function test_setPerformanceFee_enforcesCap() public {
+        vm.prank(governance);
+        vault.setPerformanceFee(3000); // exactly the cap — allowed
+
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: fee too high"));
+        vault.setPerformanceFee(3001); // one over the cap — must revert
+    }
+
+    /// @notice _totalDebt bookkeeping is decremented when funds are recalled from the adapter.
+    ///         Kills the DeleteExpressionMutation that drops the `_totalDebt -= received` update.
+    function test_totalDebt_decrementsOnRecall() public {
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        // After deploy, debt tracks the deployed principal.
+        assertApproxEqAbs(vault.totalDebt(), amount, 2, "debt tracks deployed principal");
+
+        // Full exit recalls everything → debt returns to ~0.
+        vm.prank(alice);
+        vault.redeem(shares, alice, alice);
+        assertApproxEqAbs(vault.totalDebt(), 0, 2, "debt decremented on full recall");
+    }
+
+    /// @notice Depositing while the strategy is paused (activeAdapter == address(0)) holds
+    ///         funds idle and does NOT attempt to push to the zero adapter. Kills the
+    ///         IfStatementMutation on the `_deployToAdapter` `activeAdapter == address(0)`
+    ///         short-circuit (removing it would try-push to address(0), revert-and-catch, and
+    ///         emit AdapterDepositFailed). Note: the identical guard in `_recallFromAdapter` is
+    ///         an unreachable defensive check — see audit/MUTATION_TRIAGE.md EQ-1.
+    function test_deposit_whilePaused_holdsIdle_noFailureEvent() public {
+        // Pause the strategy (explicit address(0) path — bypasses registry per H-1).
+        vm.prank(governance);
+        vault.setAdapter(address(0));
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.recordLogs();
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        // Funds stay idle in the vault; totalAssets still reflects them.
+        assertEq(usdc.balanceOf(address(vault)), amount, "funds held idle while paused");
+        assertApproxEqAbs(vault.totalAssets(), amount, 1, "totalAssets reflects idle funds");
+
+        // The guard must short-circuit — no push to address(0), so no failure event.
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 failTopic = keccak256("AdapterDepositFailed(address,uint256)");
+        for (uint256 i; i < logs.length; i++) {
+            assertTrue(logs[i].topics[0] != failTopic, "no AdapterDepositFailed while paused");
+        }
     }
 
     // M-3 event mirror — re-declared so vm.expectEmit can match its signature.

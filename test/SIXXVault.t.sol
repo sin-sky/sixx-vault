@@ -739,6 +739,45 @@ contract SIXXVaultTest is Test {
         vault.setFeeRecipient(address(0));
     }
 
+    /// @notice setManagementFee enforces the hard cap MAX_MANAGEMENT_FEE (500 bps).
+    ///         Kills the RequireMutation weakening `newFee <= MAX_MANAGEMENT_FEE` to `true`.
+    function test_setManagementFee_enforcesCap() public {
+        vm.prank(governance);
+        vault.setManagementFee(500); // exactly the cap — allowed
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: fee too high"));
+        vault.setManagementFee(501); // over the cap — must revert
+    }
+
+    /// @notice Migration's balance-delta accounting excludes pre-existing idle: `received`
+    ///         must be (balanceAfter - balanceBefore), so a shorting adapter still reverts the
+    ///         migration even when the vault already holds idle assets. Kills the `-`->`+`
+    ///         mutation on that subtraction (which would let idle mask an adapter shortfall).
+    function test_setAdapter_migration_balanceDelta_excludesIdle() public {
+        FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(faulty), "Test", "Faulty");
+        vault.setAdapter(address(faulty));
+        vm.stopPrank();
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // funds now in the faulty adapter
+        vm.stopPrank();
+
+        // Pre-existing idle in the vault (e.g. a donation) — must NOT mask a shortfall.
+        usdc.mint(address(vault), amount);
+        faulty.setDeliverBps(9_000); // adapter under-delivers 90% on the migration recall
+
+        MockAdapter fresh = new MockAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(fresh), "DeFi", "Mock v2");
+        vm.expectRevert(bytes("VAULT: adapter shortfall")); // received counts only the delta
+        vault.setAdapter(address(fresh));
+        vm.stopPrank();
+    }
+
     /// @notice The constructor rejects a zero governance address. Kills the
     ///         DeleteExpressionMutation that drops the `governance_ != address(0)` guard.
     function test_constructor_rejectsZeroGovernance() public {
@@ -788,38 +827,78 @@ contract SIXXVaultTest is Test {
     //   current behaviour and quantify the unfairness.
     // ─────────────────────────────────────────────────────────
 
-    /// @notice A depositor who joins right before collectFees is diluted for the fee that
-    ///         accrued over a period they were NOT present. Present for 0 seconds, Bob still
-    ///         loses ~half of a year's fee because the fee is charged on the whole pool
-    ///         (including his fresh principal) over the full un-checkpointed elapsed window.
-    function test_collectFees_KNOWNISSUE_lateDepositorDilutedForPriorPeriod() public {
+    /// @notice ADR-007 #3 FIX: a depositor who joins right before a fee collection is NOT
+    ///         diluted for the prior-period fee. Bob's deposit crystallizes the accrued fee
+    ///         (charging only the pre-existing holders) BEFORE his shares are minted, so he
+    ///         enters at the post-fee NAV and a subsequent collectFees is a no-op for him.
+    function test_collectFees_lateDepositor_notDiluted_afterCrystallize() public {
         vm.prank(governance);
         vault.setManagementFee(100); // 1% / yr
 
         uint256 amount = 10_000 * USDC_6;
-        // Alice present for the full year.
         vm.startPrank(alice);
         usdc.approve(address(vault), amount);
         vault.deposit(amount, alice);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + 365 days + 6 hours); // fee accrues, NOT yet collected
+        vm.warp(block.timestamp + 365 days + 6 hours); // fee accrues
 
-        // Bob joins at the very end — present for 0 seconds of the accrual window.
+        uint256 feeBefore = vault.balanceOf(feeRcpt);
+        // Bob's deposit crystallizes Alice's accrued fee first (feeRecipient gets shares),
+        // then mints Bob's shares at the post-fee NAV.
         vm.startPrank(bob);
         usdc.approve(address(vault), amount);
         uint256 bobShares = vault.deposit(amount, bob);
         vm.stopPrank();
+        assertGt(vault.balanceOf(feeRcpt), feeBefore, "fee crystallized on deposit (Alice pays, not Bob)");
 
         uint256 bobValueBefore = vault.convertToAssets(bobShares);
-        vault.collectFees(); // permissionless
+        vault.collectFees(); // now a no-op for the just-consumed window
         uint256 bobValueAfter = vault.convertToAssets(bobShares);
 
-        // Unfairness: Bob loses value despite zero holding time during the accrual window.
-        assertLt(bobValueAfter, bobValueBefore, "#3: late depositor diluted by prior-period fee");
-        // Magnitude is material — on the order of a year's fee share, not dust.
-        uint256 bobLoss = bobValueBefore - bobValueAfter;
-        assertGt(bobLoss, 10 * USDC_6, "#3: dilution is material (>$10 on a $10k same-instant deposit)");
+        // Bob is not diluted: his value is unchanged (within share-rounding dust).
+        assertApproxEqAbs(bobValueAfter, bobValueBefore, 2, "#3 fixed: late depositor not diluted");
+        assertApproxEqRel(bobValueAfter, amount, 0.001e18, "Bob's stake ~= his deposit");
+    }
+
+    /// @notice ADR-007 #3: an exiting user cannot dodge the accrued fee — withdrawing
+    ///         crystallizes it first, so the fee is charged before they leave.
+    function test_collectFees_crystallizedOnWithdraw() public {
+        vm.prank(governance);
+        vault.setManagementFee(100);
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 365 days + 6 hours);
+        assertEq(vault.balanceOf(feeRcpt), 0, "no fee minted yet");
+
+        // Alice exits; the withdraw path must crystallize the fee first.
+        vm.prank(alice);
+        vault.redeem(shares, alice, alice);
+        assertGt(vault.balanceOf(feeRcpt), 0, "fee crystallized on the exiting user's withdraw");
+    }
+
+    /// @notice ADR-007 #3: changing the fee rate crystallizes at the OLD rate first
+    ///         (no retroactive re-pricing of the elapsed period).
+    function test_setManagementFee_crystallizesAtOldRate() public {
+        vm.prank(governance);
+        vault.setManagementFee(100); // 1%
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 365 days + 6 hours);
+
+        // Raising the rate must first collect the year at the OLD 1% (~100 USDC), not the new rate.
+        vm.prank(governance);
+        vault.setManagementFee(500); // 5%
+        uint256 feeAssets = vault.convertToAssets(vault.balanceOf(feeRcpt));
+        assertApproxEqRel(feeAssets, 100 * USDC_6, 0.02e18, "crystallized at old 1%, not new 5%");
     }
 
     /// @notice Permissionless collectFees at low TVL advances the fee anchor without minting

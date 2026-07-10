@@ -64,3 +64,6 @@ slither の "新規" 16件は**行番号シフトによる id ずれ＋同一 FP
 slither "新規"15件は**行シフトの id ずれ＋同型 FP**（危険検出器 0）。新規箇所：`harvest()` の
 `adapter.harvest()` 戻り値 unused-return＝**balance-delta で profit を算定**（before/after の totalAssets 差）
 ＝M13-16 同型で戻り値非依存＝意図的。baseline 再凍結。
+
+## 追補（2026-07-11・ADR-007 #3 fee crystallize 後）
+`collectFees` を external(nonReentrant) ラッパー＋internal `_collectFees` に分割し deposit/mint/withdraw/redeem/setManagementFee 冒頭で呼出。slither "新規"は行シフトの id ずれ＋同型 FP（危険 0）。baseline 再凍結。

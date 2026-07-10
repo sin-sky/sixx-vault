@@ -107,24 +107,28 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     function deposit(uint256 assets, address receiver)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
+        _collectFees(); // ADR-007 #3: crystallize before conversion
         return super.deposit(assets, receiver);
     }
 
     function mint(uint256 shares, address receiver)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
+        _collectFees();
         return super.mint(shares, receiver);
     }
 
     function withdraw(uint256 assets, address receiver, address owner)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
+        _collectFees();
         return super.withdraw(assets, receiver, owner);
     }
 
     function redeem(uint256 shares, address receiver, address owner)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
+        _collectFees();
         return super.redeem(shares, receiver, owner);
     }
 
@@ -389,6 +393,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     }
 
     function setManagementFee(uint256 newFee) external onlyGovernance {
+        _collectFees(); // ADR-007 #3: crystallize at the old rate before changing (no retroactive fee)
         require(newFee <= MAX_MANAGEMENT_FEE, "VAULT: fee too high");
         managementFee = newFee;
     }
@@ -403,7 +408,16 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // =========================================
 
     /// @notice Collect accrued management fees by minting shares to feeRecipient
-    function collectFees() external override returns (uint256 feeShares) {
+    function collectFees() external override nonReentrant returns (uint256 feeShares) {
+        return _collectFees();
+    }
+
+    /// @dev ADR-007 #3: crystallize accrued management fee. Called at the start of every
+    ///      deposit/mint/withdraw/redeem (before the ERC-4626 conversion) and before a fee-rate
+    ///      change, so the fee is charged on the pool/time that actually earned it — a late
+    ///      depositor is not diluted for a period they were absent, and an exiting user cannot
+    ///      dodge their share. CEI: the fee anchor is advanced before the mint.
+    function _collectFees() internal returns (uint256 feeShares) {
         if (managementFee == 0 || feeRecipient == address(0)) return 0;
 
         uint256 elapsed = block.timestamp - _lastHarvestTimestamp;
@@ -411,10 +425,9 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
         uint256 assets = totalAssets();
         uint256 supply = totalSupply();
-        if (assets == 0 || supply == 0) {
-            _lastHarvestTimestamp = block.timestamp;
-            return 0;
-        }
+        // Advance the anchor first (CEI): the fee window is consumed regardless of the mint.
+        _lastHarvestTimestamp = block.timestamp;
+        if (assets == 0 || supply == 0) return 0;
 
         // Pro-rated management fee
         uint256 feeAssets = (assets * managementFee * elapsed) / (MAX_BPS * SECS_PER_YEAR);
@@ -429,7 +442,6 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
                 emit FeeCollected(feeRecipient, feeShares, feeAssets);
             }
         }
-        _lastHarvestTimestamp = block.timestamp;
     }
 
     // =========================================

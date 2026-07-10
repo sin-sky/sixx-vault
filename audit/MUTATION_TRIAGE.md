@@ -104,3 +104,15 @@ zero-check ×1）を以下のテストで解消：
 - `managementFee==0` → 続行しても `feeAssets = assets*0*elapsed/denom = 0` で mint 無し＝観測一致（gas 最適化）。
 - `feeRecipient==address(0)` は constructor と `setFeeRecipient` が両方 reject＝**到達不能**（`_mint(0,...)` revert 経路は現れない）。
 - → 到達可能な全状態で原本と一致＝等価。出現時は既知として扱う。
+
+---
+
+## 追補（2026-07-11・ADR-007 #3 fee crystallize 後）
+
+`collectFees` を external(nonReentrant)＋internal `_collectFees` に分割し deposit/mint/withdraw/redeem/
+setManagementFee 冒頭で crystallize。N=60 サンプルの生存を kill：
+- `setManagementFee` の `require(newFee <= MAX_MANAGEMENT_FEE)` → `test_setManagementFee_enforcesCap`
+- migration の `received = balAfter - balBefore`（`-`→`+`・pre-existing idle が shortfall を masking）→
+  `test_setAdapter_migration_balanceDelta_excludesIdle`（vault に idle donation＋shorting adapter で revert 検証）
+
+**最終＝60/60 killed・100%・生存0。**

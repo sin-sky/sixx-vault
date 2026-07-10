@@ -17,7 +17,8 @@ ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で
 | 項目 | 値 |
 |---|---|
 | repo | `github.com/sin-sky/sixx-vault` |
-| **凍結コミット** | **`3917de7`**（branch `main`） |
+| **監査対象コード凍結** | **`3917de7`**（`src/`・`test/` はこの時点で凍結） |
+| 本ハンドオフ束 | 現行 `main` HEAD（レビュー文書 `audit/*` を追加したのみ・**監査対象コードは無変更**）。zip 名の末尾 shorthash＝バンドル生成コミット |
 | solc | **0.8.28** |
 | Foundry | forge **1.7.1** |
 | OpenZeppelin | **v5.6.1**（`lib/openzeppelin-contracts`） |

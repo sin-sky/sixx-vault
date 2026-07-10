@@ -18,9 +18,11 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title PendlePTAdapter
-/// @notice SIXX strategy adapter for a fixed-yield Pendle Principal Token (PT-sUSDe).
-///         principal in sUSDe; yield fixed if held to maturity; underlying=Ethena;
-///         early exit at AMM price (not par).
+/// @notice SIXX fixed-yield adapter for a Pendle Principal Token (PT-sUSDe).
+///         The yield is fixed ONLY if held to maturity; principal is NOT
+///         guaranteed. Principal is held as sUSDe (Ethena); an early exit is at
+///         market price and can be below your deposit, and an Ethena/sUSDe depeg
+///         can reduce principal even at maturity.
 ///
 /// @dev Vault asset is USDC. PT is NOT ERC-4626 (maturity-bearing zero-coupon), so
 ///      this is a bespoke adapter rather than the shared ERC4626Adapter.
@@ -36,7 +38,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///        pre-maturity  = min(Pendle TWAP PtToAssetRate, 1e18) * ptBal, USDe≈USDC par
 ///        post-maturity = par (rate = 1e18)
 ///      The TWAP oracle (not spot) is the only external price in the accounting
-///      core, capped at par so it can never over-mark. DEX spot never enters
+///      core, capped at par so it can never over-mark. Market spot never enters
 ///      accounting (ADR-004 §4). Truncation is always vault-favorable.
 ///
 /// @dev Ethereum mainnet reference deployment (PT-sUSDe, expiry 2026-08-13):
@@ -438,8 +440,16 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         return "DeFi";
     }
 
+    /// @notice Mandatory risk disclosure surfaced to integrators/UI. Not part of
+    ///         IStrategyAdapter; deliberately added for this satellite product.
+    function description() external pure returns (string memory) {
+        return
+            "principal held as sUSDe (Ethena synthetic USD); yield fixed ONLY if held to maturity, NOT principal-guaranteed; early exit at market price can be below deposit; depeg can reduce principal even at maturity";
+    }
+
     /// @notice Layer-2 high-risk band: Ethena synthetic-dollar underlying + maturity
-    ///         structure. Fixed only if held to maturity; early exit at AMM price.
+    ///         structure. Fixed only if held to maturity; early exit at market
+    ///         price (can be below deposit).
     function riskLevel() external pure override returns (uint8) {
         return 4;
     }
@@ -459,9 +469,9 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         }
     }
 
-    /// @notice 0 = no hard lock (AMM early exit is available anytime). The maturity
-    ///         horizon and early-exit-below-par economics are disclosed at the
-    ///         product layer, not encoded as a hard lock here.
+    /// @notice 0 = no hard time-lock (early exit is available anytime at market
+    ///         price). The maturity horizon and early-exit-below-deposit economics
+    ///         are disclosed at the product layer, not encoded as a hard lock here.
     function requiredLockPeriod() external pure override returns (uint256) {
         return 0;
     }

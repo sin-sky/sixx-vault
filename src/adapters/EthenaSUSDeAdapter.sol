@@ -15,9 +15,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///         DISCLOSURE: principal is held in synthetic USD (Ethena sUSDe); yield is
 ///         variable and NOT principal-guaranteed; the native 7-day unstake cooldown
 ///         is bypassed via a DEX exit; the underlying carries depeg risk (Oct-2025
-///         USDe briefly traded ~$0.65 on one CEX order book). This is a "fixed rate
-///         != principal guarantee" product and must never be presented as a
-///         capital-guaranteed deposit.
+///         USDe briefly traded ~$0.65 on one CEX order book). This is a
+///         "variable-yield, NOT capital-guaranteed" product and must never be
+///         presented as a capital-guaranteed deposit.
 ///
 /// @dev Flow (asset() == USDC, so the adapter plugs into a USDC-denominated SIXXVault):
 ///      - deposit:  vault sends USDC → Curve (USDC→USDe) → StakedUSDeV2.deposit(USDe) → hold sUSDe.
@@ -354,7 +354,7 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
     /// @dev Not part of IStrategyAdapter; deliberately added for this satellite product.
     function description() external pure returns (string memory) {
         return
-            "principal in synthetic USD (Ethena sUSDe); yield variable, NOT principal-guaranteed; 7-day cooldown bypassed via DEX exit; depeg risk (Oct-2025 briefly $0.65)";
+            "principal in synthetic USD (Ethena sUSDe); yield variable, NOT principal-guaranteed; 7-day cooldown bypassed via instant market exit; depeg risk (Oct-2025 briefly $0.65)";
     }
 
     // =========================================

@@ -192,7 +192,7 @@ contract EthenaSUSDeAdapterUnitTest is Test {
         assertTrue(adapter.isActive());
         assertEq(
             adapter.description(),
-            "principal in synthetic USD (Ethena sUSDe); yield variable, NOT principal-guaranteed; 7-day cooldown bypassed via DEX exit; depeg risk (Oct-2025 briefly $0.65)"
+            "principal in synthetic USD (Ethena sUSDe); yield variable, NOT principal-guaranteed; 7-day cooldown bypassed via instant market exit; depeg risk (Oct-2025 briefly $0.65)"
         );
     }
 

@@ -28,6 +28,8 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     uint256 private constant SECS_PER_YEAR = 365 days + 6 hours;
     uint256 private constant MAX_PERFORMANCE_FEE = 3_000; // 30% hard cap
     uint256 private constant MAX_MANAGEMENT_FEE = 500;    // 5% hard cap
+    /// @dev ADR-007 #2: window over which harvested profit unlocks linearly (JIT defense).
+    uint256 private constant PROFIT_UNLOCK_PERIOD = 8 hours;
 
     // =========================================
     // State Variables
@@ -49,6 +51,11 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     uint256 private _totalDebt;
     /// @dev Timestamp of last fee collection
     uint256 private _lastHarvestTimestamp;
+
+    /// @dev ADR-007 #2: profit locked at the last harvest, released linearly over
+    ///      PROFIT_UNLOCK_PERIOD, and the timestamp of that harvest.
+    uint256 private _lockedProfit;
+    uint256 private _lastReport;
 
     /// @dev Maps user address to the unix timestamp they can next withdraw
     mapping(address => uint256) private _lockedUntil;
@@ -81,6 +88,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         feeRecipient = feeRecipient_;
         guardian = guardian_;
         _lastHarvestTimestamp = block.timestamp;
+        _lastReport = block.timestamp;
     }
 
     // =========================================
@@ -124,12 +132,43 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // ERC-4626: totalAssets
     // =========================================
 
-    /// @notice Vault balance + assets deployed to adapter
+    /// @notice Vault balance + assets deployed to adapter, minus still-locked profit.
+    /// @dev ADR-007 #2: subtract the unreleased portion of the last harvest so a
+    ///      just-in-time depositor cannot mint against yield that has not yet vested.
     function totalAssets() public view override(ERC4626, IERC4626) returns (uint256) {
         uint256 adapterAssets = activeAdapter != address(0)
             ? IStrategyAdapter(activeAdapter).totalAssets()
             : 0;
-        return IERC20(asset()).balanceOf(address(this)) + adapterAssets;
+        uint256 raw = IERC20(asset()).balanceOf(address(this)) + adapterAssets;
+        uint256 lp = lockedProfit();
+        return raw > lp ? raw - lp : 0;
+    }
+
+    /// @notice Amount of harvested profit still locked; degrades linearly to 0 over
+    ///         PROFIT_UNLOCK_PERIOD after the last harvest.
+    function lockedProfit() public view override returns (uint256) {
+        uint256 elapsed = block.timestamp - _lastReport;
+        if (elapsed >= PROFIT_UNLOCK_PERIOD) return 0;
+        return (_lockedProfit * (PROFIT_UNLOCK_PERIOD - elapsed)) / PROFIT_UNLOCK_PERIOD;
+    }
+
+    /// @notice Realize adapter profit and lock it for linear release (permissionless).
+    /// @dev ADR-007 #2 structural JIT defense. Any discrete gain the adapter recognizes
+    ///      during harvest() is measured as a balance delta and added to the locked buffer,
+    ///      which unlocks over PROFIT_UNLOCK_PERIOD. Continuous-accrual adapters harvest to a
+    ///      no-op (delta 0), so this leaves their behaviour unchanged.
+    function harvest() external override nonReentrant returns (uint256 profit) {
+        address adapter_ = activeAdapter;
+        if (adapter_ != address(0)) {
+            uint256 beforeBal = IStrategyAdapter(adapter_).totalAssets();
+            IStrategyAdapter(adapter_).harvest();
+            uint256 afterBal = IStrategyAdapter(adapter_).totalAssets();
+            if (afterBal > beforeBal) profit = afterBal - beforeBal;
+        }
+        // Carry the still-locked remainder + the new profit; restart the unlock clock.
+        _lockedProfit = lockedProfit() + profit;
+        _lastReport = block.timestamp;
+        emit ProfitLocked(profit, _lockedProfit);
     }
 
     // =========================================

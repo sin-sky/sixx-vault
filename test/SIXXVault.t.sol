@@ -739,6 +739,16 @@ contract SIXXVaultTest is Test {
         vault.setFeeRecipient(address(0));
     }
 
+    /// @notice The constructor rejects a zero governance address. Kills the
+    ///         DeleteExpressionMutation that drops the `governance_ != address(0)` guard.
+    function test_constructor_rejectsZeroGovernance() public {
+        vm.expectRevert(bytes("VAULT: zero governance"));
+        new SIXXVault(
+            IERC20(address(usdc)), "SIXX", "sx",
+            address(0), address(registry), feeRcpt, guardianAddr
+        );
+    }
+
     /// @notice Depositing while the strategy is paused (activeAdapter == address(0)) holds
     ///         funds idle and does NOT attempt to push to the zero adapter. Kills the
     ///         IfStatementMutation on the `_deployToAdapter` `activeAdapter == address(0)`

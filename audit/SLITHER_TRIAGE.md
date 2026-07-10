@@ -57,3 +57,10 @@ slither の "新規" 16件は**行番号シフトによる id ずれ＋同一 FP
 | Ethena `totalAssets` incorrect-equality / exchange 系 unused-return | — | 意図的 | `shares==0` guard・Curve `exchange` は min_out で保護し実残高で検算 |
 
 → baseline（`audit/slither-baseline.json`）を再凍結（70件）。実問題ゼロ。正典 workspace `threads/sixx-vault/SLITHER_TRIAGE.md` も同期予定。
+
+## 追補（2026-07-11・ADR-007 #2 profit-streaming 後）
+
+`totalAssets` に locked-profit 減算・`harvest()`（profit 実現→lock）・`lockedProfit()` を追加。
+slither "新規"15件は**行シフトの id ずれ＋同型 FP**（危険検出器 0）。新規箇所：`harvest()` の
+`adapter.harvest()` 戻り値 unused-return＝**balance-delta で profit を算定**（before/after の totalAssets 差）
+＝M13-16 同型で戻り値非依存＝意図的。baseline 再凍結。

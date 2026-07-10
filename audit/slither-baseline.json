@@ -3,28 +3,28 @@
  "results": {
   "detectors": [
    {
-    "id": "37a674ff4f72c1ff4b2267c73336b0236f6a8525b317c18011a756b5a9b769c2",
+    "id": "0c95b1680d7b2555126d7f44309b1fe58ac01eb5cdcd592ddf777305f8eaf8cb",
     "check": "reentrancy-balance",
     "impact": "High",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[248]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+    "location": "src/core/SIXXVault.sol:[287]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L287-L306"
    },
    {
-    "id": "b5246216e5e79f2217749d59193c0cedc5f4ad438bddcae5f4569e0d3b526112",
+    "id": "364462ab9dd26cbeb8d5b61a576d3be44490c83a5439e03d073e57e5aeb9b183",
     "check": "reentrancy-balance",
     "impact": "High",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
+    "location": "src/core/SIXXVault.sol:[287]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L287-L306"
    },
    {
-    "id": "be52b2507b29e6a40eb78a683f6f456cab1d8ff42249c2219750fd6857b3cd0c",
+    "id": "47a7937914f2d53ae6369f4d6fd33aa488de6d8d00d74989ba42bf903f759f31",
     "check": "reentrancy-balance",
     "impact": "High",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[248]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+    "location": "src/core/SIXXVault.sol:[315]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L315-L371"
    },
    {
     "id": "f8458019e7c717b37e685e23a05fed1956c77ba25a35ea2b87ffd3bfad64b89c",
@@ -51,44 +51,20 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "dc608952aec46d6d44c267e7ed6daf11781594dd80739a3a9a032c54ee568f09",
+    "id": "e83a60b46a084f04f9ba5a018fe66a332885d06bec92877b7624876d5d4eaf51",
     "check": "divide-before-multiply",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[367]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
+    "location": "src/core/SIXXVault.sol:[406]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L406-L433"
    },
    {
-    "id": "016e52fdd02ffaa0462b5396d44ad4c22db2e6bde3e752ad9b35b433ce51cfa1",
+    "id": "08359391495a1e615026662f6226e106d0551cbfddcd91efcde5c9567efddef1",
     "check": "incorrect-equality",
     "impact": "Medium",
     "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[367]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
-   },
-   {
-    "id": "36c2c5f13eec207e0faac115a66091bf19857696f7d086f6469815ac2be3ccab",
-    "check": "incorrect-equality",
-    "impact": "Medium",
-    "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[367]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
-   },
-   {
-    "id": "49e3bf525bf7f4c201e315db2f4ea7fec34bf091df1f02625eb31e3825fcc476",
-    "check": "incorrect-equality",
-    "impact": "Medium",
-    "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[248]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
-   },
-   {
-    "id": "6068337394b92fec4bc391a8c2217a64552515482aca492d0dc363044db67a85",
-    "check": "incorrect-equality",
-    "impact": "Medium",
-    "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[220]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
+    "location": "src/core/SIXXVault.sol:[406]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L406-L433"
    },
    {
     "id": "62966637a1d0739513cdb0852bb7b39212ab6568592176168bbd1df84ee48a54",
@@ -97,6 +73,30 @@
     "confidence": "High",
     "location": "src/core/AdapterRegistry.sol:[83]",
     "first_markdown_element": "src/core/AdapterRegistry.sol#L83-L85"
+   },
+   {
+    "id": "6971ada383db234bd19205c661c7c0d2878a0669275eb9ddb8c226945a83d0d5",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[287]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L287-L306"
+   },
+   {
+    "id": "719177bcf864d4b64ef5521652055dd16d0aa8738b64cb7fa142978bdf4d9da9",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[406]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L406-L433"
+   },
+   {
+    "id": "7c24105f760658b8e1503a4b10e2b23dd3ac8e5309d1cbafd924e8ca15c4902c",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[259]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L259-L275"
    },
    {
     "id": "b5ef100bf1f4447ae1dce8e479a3d31a9b1c9cf6a8593b59ad32398e11780ec3",
@@ -139,12 +139,12 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L257-L262"
    },
    {
-    "id": "ca34a47e405c982ed444246cbc851a5e3dfbff7651cdcb75e5e64313dd35c841",
+    "id": "c20c3ed365fcc3a3bf63b70aa7a47e0630184651fc7a07c31e78947f67bbc8ee",
     "check": "reentrancy-no-eth",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
+    "location": "src/core/SIXXVault.sol:[315]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L315-L371"
    },
    {
     "id": "5b2a3eacd9f611d96462890fd1b9221106804a9d0b19a34d30c9698149795a38",
@@ -159,8 +159,8 @@
     "check": "uninitialized-local",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[299]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L299"
+    "location": "src/core/SIXXVault.sol:[338]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L338"
    },
    {
     "id": "ac97165fc3079fa27b4b03e6da0bc10a67b1ab9323e5e4345fdccbdbb8680b69",
@@ -175,16 +175,8 @@
     "check": "uninitialized-local",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[296]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L296"
-   },
-   {
-    "id": "0be41702cd92070435e70a4bc058c9efbb2dc0488d2e511ea6603a4294362ba2",
-    "check": "unused-return",
-    "impact": "Medium",
-    "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
+    "location": "src/core/SIXXVault.sol:[335]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L335"
    },
    {
     "id": "1a8b7fb5b1affc2669caa1df31db952775c10a5f8f88955c10f40c70bdc65bee",
@@ -219,28 +211,28 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "41f9fc6dbf18ab164975cd959bb1910bbf2457e112739d737741d81c60a3ce04",
+    "id": "459f3fa4707eca324a69814a0f00e61b73a87ac0df5198814f5aa415479f44d2",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[400]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L400-L431"
+    "location": "src/core/SIXXVault.sol:[287]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L287-L306"
    },
    {
-    "id": "4a921d06d4e451d51bcac8e8153953b13b714aff7b68f7eccb0d8f89b956d676",
+    "id": "686166b40b681636721f3b0584da4a3a91407e1b0630ba7e717b792936a3d07d",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[248]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+    "location": "src/core/SIXXVault.sol:[315]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L315-L371"
    },
    {
-    "id": "6fccb13f92c440ad1d29851c64547f81f9ac617a22fd4755ae7e681bc67b248f",
+    "id": "70f05475e5ce52c484533fbba53570e93ba5c2051a743d112c63aacbb43c961e",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
+    "location": "src/core/SIXXVault.sol:[160]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L160-L172"
    },
    {
     "id": "73f919f3253985fd67af053be95add521d087e16f38152f20120715cf35c2196",
@@ -275,6 +267,14 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
+    "id": "ab932571af0019b32ecde8b39735f8404914818d3ef3702b6a122fb066b01747",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[315]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L315-L371"
+   },
+   {
     "id": "b12c760dc93036b728ad2c0523416a9d608a3d56f983ea249df3f184700ad224",
     "check": "unused-return",
     "impact": "Medium",
@@ -283,12 +283,20 @@
     "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L274-L319"
    },
    {
-    "id": "d7c61de98b303dfebd0e77f289e7521ced10e52008a9a3d708adddbc2403967b",
+    "id": "b87d88773e63e3c24b2c9800eb1b537898a3388cfd823a0fc373996ba623900c",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[241]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L241-L245"
+    "location": "src/core/SIXXVault.sol:[280]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L280-L284"
+   },
+   {
+    "id": "f3198a4e9b3b04e4f3d650eafcc43720114d9536811b52fc0222ef9631b99984",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[439]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L439-L470"
    },
    {
     "id": "f8a077888513bab8b9786d2d166dabaa6afd0fdd1a7caefbb1f3931759e9aa8c",
@@ -299,68 +307,84 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "dfcc47dbb3207d2a8349bdc8fdf1936363f31ca80c8e70dda1ec224534ce58a9",
+    "id": "acf5080be1cec7e4d07cbcf6d53cc5f8fb7d33dce04d523289175ff84edb6af3",
     "check": "events-maths",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[352]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L352-L355"
+    "location": "src/core/SIXXVault.sol:[391]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L391-L394"
    },
    {
-    "id": "c70865536526538e2a2b176a7442f60acb1255f97bad7b9b0a61879061e101d3",
+    "id": "170f268b98280d577dfa18a2f16cad217cc4eeb8f844e829a2f9da5afde00e3a",
     "check": "missing-zero-check",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[72]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L72"
+    "location": "src/core/SIXXVault.sol:[79]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L79"
    },
    {
-    "id": "25f4c6918041519feee07f6255d558324789ebcbedfe17cb7dbac0b7e78c4e3c",
+    "id": "2718300d59455f707cfc7f2dc265a799871088b3f30f0c24f4f80b854a94fd61",
     "check": "reentrancy-benign",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[400]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L400-L431"
+    "location": "src/core/SIXXVault.sol:[259]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L259-L275"
    },
    {
-    "id": "9f80039ecd1c486e77934ceb1525e70e260c5c3f1a1cf1e97f403988c7e5c4ac",
+    "id": "816b740982a30d942febdfaf72945372124ef65e7e60cfd3dd7307ed94161339",
     "check": "reentrancy-benign",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
+    "location": "src/core/SIXXVault.sol:[439]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L439-L470"
    },
    {
-    "id": "c15c2616a61d008e67f680330476e116fb2cb041b0e4f87a99033b9d76799a81",
+    "id": "92b78c5c420e8fbe2a0ac725e657c7e06f2553cf72d4513ba44865a809028a83",
     "check": "reentrancy-benign",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[248]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+    "location": "src/core/SIXXVault.sol:[160]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L160-L172"
    },
    {
-    "id": "dd67730f073393e01f5354360800d6316c51d5be50638691c741df156e32df23",
+    "id": "a90040f04680e7191ac366a32d712abac070a62442063bba0fbb7a07bd9e5d7f",
     "check": "reentrancy-benign",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[220]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
+    "location": "src/core/SIXXVault.sol:[287]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L287-L306"
    },
    {
-    "id": "9c822f6586318a1ec99719c28343c5e3309745afd3af5795b615d2b2f668d30c",
+    "id": "b4eb6097563a0a0aec36287f80be7b0f9d5bd422a275758e3a0fcaf5edf5c2aa",
+    "check": "reentrancy-benign",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[315]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L315-L371"
+   },
+   {
+    "id": "d7689d1f6b9bbe7c3e44ba007622658bb9edd27be6b4c4716e454819d12a04a5",
     "check": "reentrancy-events",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[220]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
+    "location": "src/core/SIXXVault.sol:[259]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L259-L275"
    },
    {
-    "id": "08ffc5ef25871da5c7a9ecf228a18af5327474cdd7ed3acb2e870d70e7e055a5",
+    "id": "05be4b9c407cb06c13ce380a7cfc9da719bc71c95f5264e333c834c367875087",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[208]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L208-L213"
+    "location": "src/core/SIXXVault.sol:[192]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L192-L195"
+   },
+   {
+    "id": "0ee791f68f03467fea1828f8e90c37d9761d77357c2f5b9c37af4e0b5d167a52",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[287]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L287-L306"
    },
    {
     "id": "1157e2f164896e6b2922722b04ade5ba3d99fff6518b05a9482d29a78aab165d",
@@ -371,12 +395,12 @@
     "first_markdown_element": "src/core/AdapterRegistry.sol#L66-L77"
    },
    {
-    "id": "2752ac7dc8fb1ca693a2b3a7378fdd51da4b43fd55c78f71e16efe1388400604",
+    "id": "28cae34e37e91f807b79d5f975c5b9957e16ab122fabf3a9938d14a82c917480",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[153]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L153-L156"
+    "location": "src/core/SIXXVault.sol:[197]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L197-L200"
    },
    {
     "id": "34c11fce7aa3013cdb19cb7af947a144fe5fd0c269825afc71e6483a3ae999a2",
@@ -385,6 +409,14 @@
     "confidence": "Medium",
     "location": "src/adapters/PendlePTAdapter.sol:[481]",
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L481-L483"
+   },
+   {
+    "id": "3b1008d43a06767b5ed779b998d7b4b81160fb844a5760f6bbae883935f85f47",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[149]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L149-L153"
    },
    {
     "id": "40e85b6a38410a2ef11751bf973b568c0f651c5c6b825988a01d773c3ce2ca02",
@@ -403,12 +435,12 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L267-L302"
    },
    {
-    "id": "6dd5f8bb445341a8c1337d4bfa171cd34acb479881534aea3a0d15a1febfcd22",
+    "id": "623420f329ca759e4880fe7d9e036a58917c8490355b34c55b50294fc4bf3f88",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[367]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
+    "location": "src/core/SIXXVault.sol:[229]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L229-L242"
    },
    {
     "id": "6fa1ac3b0109d228295a55eedb96b8431635c5f43b6ae04e67ec354cce3001f4",
@@ -435,28 +467,28 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "820ac560728014ede5a55bf31a7234d29418d3f9ba78e234a96fa8ece6beef2f",
+    "id": "96d7cb5266b4700d9baa798e0aa323a22989f90950c749c33b9d0a9a1d22ace6",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[167]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L167-L188"
+    "location": "src/core/SIXXVault.sol:[138]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L138-L145"
    },
    {
-    "id": "951ebb49cfc285f6711cfe594c50822b295ed9313bfdebf3b0c122a75bad407b",
+    "id": "9a3e2e0507120d553064e2a6b6670906b02c58c4066abe47a9742d51870743cd",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[190]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L190-L203"
+    "location": "src/core/SIXXVault.sol:[247]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L247-L252"
    },
    {
-    "id": "9d6ac666435f1d7256f5c9fc1c56680ae4187b31cf6d5b6c58d102a62e110ad6",
+    "id": "9b3e4c4798bd6facbd9d530600184c7ed2e4f8f7e7549c44ef75b390385e970f",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[248]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+    "location": "src/core/SIXXVault.sol:[406]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L406-L433"
    },
    {
     "id": "a5da2d76a2a705e9af21c265b076b3d87492ad786afa18191594c40a112989e2",
@@ -467,12 +499,12 @@
     "first_markdown_element": "src/core/AdapterRegistry.sol#L93-L106"
    },
    {
-    "id": "c9a6ad2999e24ba4b3c3bdcf03c295158c3b5234d0050cbc43dd5f22f24d6102",
+    "id": "b3e99b6dc7c1bf57834549f9ef38060323e4e3dedd15db94be2b3fa82f2896b8",
     "check": "timestamp",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[158]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L158-L161"
+    "location": "src/core/SIXXVault.sol:[206]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L206-L227"
    },
    {
     "id": "ec787dd29cbced6afa903e98450aa45b2d50cc4763599608f573c672bc0e3e1e",
@@ -495,8 +527,8 @@
     "check": "naming-convention",
     "impact": "Informational",
     "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[241]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L241-L245"
+    "location": "src/core/SIXXVault.sol:[280]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L280-L284"
    },
    {
     "id": "3af4bc75591f15e9f7c2fa4b70a4c238ed522beee546cf14931b16fa78cfc99b",
@@ -559,8 +591,8 @@
     "check": "immutable-states",
     "impact": "Optimization",
     "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[39]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L39"
+    "location": "src/core/SIXXVault.sol:[41]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L41"
    }
   ]
  }

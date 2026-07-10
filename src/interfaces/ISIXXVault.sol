@@ -50,6 +50,19 @@ interface ISIXXVault is IERC4626 {
     function collectFees() external returns (uint256 feeShares);
 
     // =========================================
+    // Profit streaming (ADR-007 #2 — structural JIT defense)
+    // =========================================
+
+    /// @notice Realize adapter profit and lock it, releasing linearly over the unlock window
+    ///         (anyone can call). Discrete harvest gains are buffered so a just-in-time
+    ///         depositor cannot skim yield they did not earn over time.
+    /// @return profit Newly realized profit locked by this call
+    function harvest() external returns (uint256 profit);
+
+    /// @notice Amount of profit still locked (not yet counted in totalAssets), degrading to 0.
+    function lockedProfit() external view returns (uint256);
+
+    // =========================================
     // Emergency
     // =========================================
 
@@ -106,4 +119,7 @@ interface ISIXXVault is IERC4626 {
     ///      idle. Any (marked - received) shortfall is written off from NAV — a deliberate,
     ///      timelocked governance action that keeps the pause valve always available.
     event AdapterForceDetached(address indexed adapter, uint256 marked, uint256 received);
+    /// @dev ADR-007 #2: Emitted on harvest when realized profit is locked for linear release.
+    ///      `newProfit` is realized this call; `totalLocked` is the resulting locked balance.
+    event ProfitLocked(uint256 newProfit, uint256 totalLocked);
 }

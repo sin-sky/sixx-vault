@@ -85,3 +85,22 @@ zero-check ×1）を以下のテストで解消：
   require/branch/会計 decision に一切使われない（検証済）。安全上は等価だが public getter ゆえ pin した。
 - **最終結果（本サンプル）＝60/60 killed・100%・生存0**。EQ-1/EQ-2（`_recallFromAdapter` 到達不能ガード・
   `collectFees` elapsed==0）は本サンプル未抽出。出現時は等価として扱う（本書 EQ-1/EQ-2）。
+
+---
+
+## 追補（2026-07-11・ADR-007 #2 profit-streaming 後）
+
+`totalAssets` に locked-profit 減算・`harvest()`／`lockedProfit()` を追加。src 変更で N=60 サンプルが
+入れ替わり、生存を以下で処理：
+
+**新規テストで kill（新コード＋pre-existing cheap）**
+| 箇所 | 変異 | 追加テスト |
+|---|---|---|
+| `harvest()` の `if (adapter_ != address(0))` | IfStatement→`true`（paused 時 address(0) 呼出） | `test_harvest_whilePaused_noopNoRevert` |
+| `setAdapter` force-detach の `received = balAfter-balBefore` | DeleteExpression | `test_forceDetach_...` に `AdapterForceDetached` の expectEmit 追加（received 値を pin） |
+| constructor `require(governance_ != address(0))` | DeleteExpression | `test_constructor_rejectsZeroGovernance` |
+
+**EQ-3（等価・kill 不可）＝`collectFees` の `if (managementFee==0 || feeRecipient==address(0)) return 0`**
+- `managementFee==0` → 続行しても `feeAssets = assets*0*elapsed/denom = 0` で mint 無し＝観測一致（gas 最適化）。
+- `feeRecipient==address(0)` は constructor と `setFeeRecipient` が両方 reject＝**到達不能**（`_mint(0,...)` revert 経路は現れない）。
+- → 到達可能な全状態で原本と一致＝等価。出現時は既知として扱う。

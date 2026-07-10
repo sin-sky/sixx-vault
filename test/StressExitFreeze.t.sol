@@ -42,6 +42,9 @@ contract StressExitFreezeTest is Test {
     uint256 constant USDC_6 = 1e6;
     uint256 constant AMOUNT = 10_000 * USDC_6;
 
+    // Mirror of ISIXXVault event for vm.expectEmit.
+    event AdapterForceDetached(address indexed adapter, uint256 marked, uint256 received);
+
     function setUp() public {
         usdc = new StressUSDC();
         vm.prank(governance);
@@ -81,6 +84,10 @@ contract StressExitFreezeTest is Test {
     function test_forceDetach_succeeds_underShortfall_thenUsersExitProRata() public {
         faulty.setDeliverBps(9_900); // realizable = 99% of the NAV mark
 
+        // The event must report the true recalled amount (marked=10k, received=9.9k),
+        // which pins the `received = balanceAfter - balBefore` measurement.
+        vm.expectEmit(true, false, false, true, address(vault));
+        emit AdapterForceDetached(address(faulty), AMOUNT, (AMOUNT * 9_900) / 10_000);
         vm.prank(governance);
         vault.setAdapter(address(0)); // force-detach: MUST NOT revert now
 

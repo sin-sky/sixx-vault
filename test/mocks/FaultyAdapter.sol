@@ -18,7 +18,10 @@ contract FaultyAdapter is IStrategyAdapter {
 
     /// @notice When true, `withdraw` reverts (simulates a frozen/broken protocol).
     bool public revertOnWithdraw;
+    /// @notice When true, `totalAssets` reverts (simulates a broken oracle / not-ready TWAP).
+    bool public revertOnTotalAssets;
     /// @notice Fraction of the requested amount actually delivered on withdraw (bps).
+    ///         < 10_000 models "realizable < mark" (stress slippage / depeg beyond the NAV mark).
     uint256 public deliverBps = 10_000; // 100% by default
 
     constructor(address asset_, address vault_) {
@@ -35,11 +38,16 @@ contract FaultyAdapter is IStrategyAdapter {
         revertOnWithdraw = v;
     }
 
+    function setRevertOnTotalAssets(bool v) external {
+        revertOnTotalAssets = v;
+    }
+
     function setDeliverBps(uint256 bps) external {
         deliverBps = bps;
     }
 
     function totalAssets() external view override returns (uint256) {
+        require(!revertOnTotalAssets, "FAULTY: totalAssets reverts");
         return _balance;
     }
 

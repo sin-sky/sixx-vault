@@ -724,6 +724,75 @@ contract SIXXVaultTest is Test {
         }
     }
 
+    // ─────────────────────────────────────────────────────────
+    // Fee-fairness characterization (Threat Council finding #3, MEDIUM)
+    //   Documents (does NOT fix) that collectFees is not checkpointed on
+    //   deposit/withdraw: a late depositor is diluted for a fee that accrued
+    //   before they joined. Fix (crystallize-on-interaction) is a core change
+    //   requiring SHIN sign-off + re-audit (workspace ADR-007). These pin the
+    //   current behaviour and quantify the unfairness.
+    // ─────────────────────────────────────────────────────────
+
+    /// @notice A depositor who joins right before collectFees is diluted for the fee that
+    ///         accrued over a period they were NOT present. Present for 0 seconds, Bob still
+    ///         loses ~half of a year's fee because the fee is charged on the whole pool
+    ///         (including his fresh principal) over the full un-checkpointed elapsed window.
+    function test_collectFees_KNOWNISSUE_lateDepositorDilutedForPriorPeriod() public {
+        vm.prank(governance);
+        vault.setManagementFee(100); // 1% / yr
+
+        uint256 amount = 10_000 * USDC_6;
+        // Alice present for the full year.
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 365 days + 6 hours); // fee accrues, NOT yet collected
+
+        // Bob joins at the very end — present for 0 seconds of the accrual window.
+        vm.startPrank(bob);
+        usdc.approve(address(vault), amount);
+        uint256 bobShares = vault.deposit(amount, bob);
+        vm.stopPrank();
+
+        uint256 bobValueBefore = vault.convertToAssets(bobShares);
+        vault.collectFees(); // permissionless
+        uint256 bobValueAfter = vault.convertToAssets(bobShares);
+
+        // Unfairness: Bob loses value despite zero holding time during the accrual window.
+        assertLt(bobValueAfter, bobValueBefore, "#3: late depositor diluted by prior-period fee");
+        // Magnitude is material — on the order of a year's fee share, not dust.
+        uint256 bobLoss = bobValueBefore - bobValueAfter;
+        assertGt(bobLoss, 10 * USDC_6, "#3: dilution is material (>$10 on a $10k same-instant deposit)");
+    }
+
+    /// @notice Permissionless collectFees at low TVL advances the fee anchor without minting
+    ///         (assets==0 || supply==0 path). Benign today (no fee was due), but documents that
+    ///         anyone can move `_lastHarvestTimestamp` — relevant once crystallize-on-interaction lands.
+    function test_collectFees_permissionless_lowTVL_advancesAnchor_noMint() public {
+        vm.prank(governance);
+        vault.setManagementFee(100);
+
+        // No deposits: totalSupply == 0.
+        vm.warp(block.timestamp + 30 days);
+        uint256 supplyBefore = vault.totalSupply();
+        uint256 minted = vault.collectFees(); // anyone can call
+        assertEq(minted, 0, "no mint when supply is 0");
+        assertEq(vault.totalSupply(), supplyBefore, "supply unchanged");
+
+        // Anchor advanced: a subsequent deposit + 1yr collects only ~1 year (not 1yr+30d).
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+        vm.warp(block.timestamp + 365 days + 6 hours);
+        vault.collectFees();
+        uint256 feeAssets = vault.convertToAssets(vault.balanceOf(feeRcpt));
+        assertApproxEqRel(feeAssets, 100 * USDC_6, 0.02e18, "fee ~1yr, anchor was advanced by the low-TVL call");
+    }
+
     // M-3 event mirror — re-declared so vm.expectEmit can match its signature.
     event AdapterDepositFailed(address indexed adapter, uint256 amount);
 

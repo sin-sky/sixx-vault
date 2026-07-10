@@ -12,5 +12,14 @@
 cache/
 out/
 
+# Audit harness generated artifacts (ADR-006 Phase 1)
+reports/
+echidna-corpus/
+gambit_out/
+crytic-export/
+.venv-audit/
+.halmos_cache/
+halmos_cache/
+
 # OS
 .DS_Store

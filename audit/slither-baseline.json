@@ -1,0 +1,543 @@
+{
+ "_note": "Slim Slither baseline (allowlist) for contract-audit.sh. Human canon: threads/sixx-vault/SLITHER_TRIAGE.md. Regenerate via ./scripts/contract-audit.sh --update-slither-baseline (writes full JSON; re-slim if committing).",
+ "results": {
+  "detectors": [
+   {
+    "id": "37a674ff4f72c1ff4b2267c73336b0236f6a8525b317c18011a756b5a9b769c2",
+    "check": "reentrancy-balance",
+    "impact": "High",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[248]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+   },
+   {
+    "id": "7f878574ce359d92149af5e1aa1dceb28ae0e9a1d9372b75de96aa7d670d8224",
+    "check": "reentrancy-balance",
+    "impact": "High",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[276]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+   },
+   {
+    "id": "be52b2507b29e6a40eb78a683f6f456cab1d8ff42249c2219750fd6857b3cd0c",
+    "check": "reentrancy-balance",
+    "impact": "High",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[248]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+   },
+   {
+    "id": "f00e81af3a8f56d31aa82304c95f315efc2325e6de8829a8d4349b7103ae2cf6",
+    "check": "reentrancy-balance",
+    "impact": "High",
+    "confidence": "Medium",
+    "location": "src/adapters/VenusUSDTAdapter.sol:[152]",
+    "first_markdown_element": "src/adapters/VenusUSDTAdapter.sol#L152-L179"
+   },
+   {
+    "id": "3c414af667cd8f59752a48079e73800b40bbf50efb2e85e1f36d581f837f5114",
+    "check": "divide-before-multiply",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[267]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L267-L302"
+   },
+   {
+    "id": "46f3f8cca01a45742515bca40d730b447983880c77958fe41748917e8cb35d2b",
+    "check": "divide-before-multiply",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[310]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
+   },
+   {
+    "id": "58ff68902ff69cab519a39c2078a845d01a06fa9df42beedbc14530e9fb49619",
+    "check": "divide-before-multiply",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[346]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
+   },
+   {
+    "id": "2c72a8405792e70ca4779ae1b84797ddc8d325d5912648f8a4b8eabf9c2ac358",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[346]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
+   },
+   {
+    "id": "49e3bf525bf7f4c201e315db2f4ea7fec34bf091df1f02625eb31e3825fcc476",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[248]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+   },
+   {
+    "id": "6068337394b92fec4bc391a8c2217a64552515482aca492d0dc363044db67a85",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[220]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
+   },
+   {
+    "id": "62966637a1d0739513cdb0852bb7b39212ab6568592176168bbd1df84ee48a54",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/AdapterRegistry.sol:[83]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L83-L85"
+   },
+   {
+    "id": "718a04a25218d8c02a8eadb81754c60b4071f4f2ebff01a706994ffd2269b77c",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[346]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
+   },
+   {
+    "id": "a758720a4b455d8ac2668d16e92170ef4a6b1a00b154789a242157ce13819a46",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[226]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L226-L233"
+   },
+   {
+    "id": "b5ef100bf1f4447ae1dce8e479a3d31a9b1c9cf6a8593b59ad32398e11780ec3",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/AdapterRegistry.sol:[93]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L93-L106"
+   },
+   {
+    "id": "c03fb0c8a9bfff913497eb985246f485fc05bfb7f30deb92b49a0515d2ae8277",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/AdapterRegistry.sol:[93]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L93-L106"
+   },
+   {
+    "id": "c0e7e63b4cae766b317b61300b2e65a610cddad1847e25c2b1f6938a5f86c58f",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/adapters/VenusUSDTAdapter.sol:[152]",
+    "first_markdown_element": "src/adapters/VenusUSDTAdapter.sol#L152-L179"
+   },
+   {
+    "id": "fa23e7b3bef77c19fc692f2d16d015c7c5473603f56acd6da1a6edda38f0985d",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/adapters/PendlePTAdapter.sol:[257]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L257-L262"
+   },
+   {
+    "id": "1c5360d8eb18fe9f24d349c57b9272bc6ceea98fbb37b4e4db4f398ca1bce59c",
+    "check": "reentrancy-no-eth",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[276]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+   },
+   {
+    "id": "5b2a3eacd9f611d96462890fd1b9221106804a9d0b19a34d30c9698149795a38",
+    "check": "uninitialized-local",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/AdapterRegistry.sol:[99]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L99"
+   },
+   {
+    "id": "ac97165fc3079fa27b4b03e6da0bc10a67b1ab9323e5e4345fdccbdbb8680b69",
+    "check": "uninitialized-local",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/AdapterRegistry.sol:[94]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L94"
+   },
+   {
+    "id": "1feec60847a5f8525cf0087adecf03ab1cbbaccbf8c050d5735b0104b4b4d29e",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[276]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+   },
+   {
+    "id": "26c875881659d6e2d3499d3c540b113daf27fff01eddf228027169cfd05749dc",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[212]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L212-L232"
+   },
+   {
+    "id": "3e2ca22242c45e9315adf4df9914313438abfd6443a39525d1c7cbc6e26897ce",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[310]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
+   },
+   {
+    "id": "4a921d06d4e451d51bcac8e8153953b13b714aff7b68f7eccb0d8f89b956d676",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[248]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+   },
+   {
+    "id": "5a1b9f462ee1c1ebcad4f647037e6ac8bb6eb91fd7432499be5b3fe06fcbb1ac",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[379]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L379-L403"
+   },
+   {
+    "id": "5fd6bc7fca7cbb99a28497688d2f018b4cabc90c927370dd880a7bc90abfa67e",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[236]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L236-L258"
+   },
+   {
+    "id": "67fb408b2aae911d0d3febe172f9793ab230ff3ce9f179cf778bfb74cca64c8d",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[267]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L267-L312"
+   },
+   {
+    "id": "73f919f3253985fd67af053be95add521d087e16f38152f20120715cf35c2196",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[212]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L212-L232"
+   },
+   {
+    "id": "763ca78e46ecd774356265396e2f95765c35e997b6523285f3ae16efd1a30191",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[267]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L267-L302"
+   },
+   {
+    "id": "9edd2e58b1afdd2e0889bd7e151394d51d185898d3765c051899c6aae0f31141",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[310]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
+   },
+   {
+    "id": "b3a392731d20eb8999b965dac000bd640dc651629eb4f3b35797bc81c024e701",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[267]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L267-L312"
+   },
+   {
+    "id": "cae7b86a5242fe7cd757200d4e0a1389cc452159348289dad18c4e69ccfa383f",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[236]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L236-L258"
+   },
+   {
+    "id": "d7c61de98b303dfebd0e77f289e7521ced10e52008a9a3d708adddbc2403967b",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[241]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L241-L245"
+   },
+   {
+    "id": "f8a077888513bab8b9786d2d166dabaa6afd0fdd1a7caefbb1f3931759e9aa8c",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[310]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
+   },
+   {
+    "id": "28eb704965694e593cb91de4cbe13ad868cc1ecc9a870642c70622d50895ef4c",
+    "check": "events-maths",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[331]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L331-L334"
+   },
+   {
+    "id": "c70865536526538e2a2b176a7442f60acb1255f97bad7b9b0a61879061e101d3",
+    "check": "missing-zero-check",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[72]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L72"
+   },
+   {
+    "id": "89d7719c277970a517a347bd399631406f09792ddeb02e05b92b526e7a34ae8d",
+    "check": "reentrancy-benign",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[379]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L379-L403"
+   },
+   {
+    "id": "c15c2616a61d008e67f680330476e116fb2cb041b0e4f87a99033b9d76799a81",
+    "check": "reentrancy-benign",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[248]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+   },
+   {
+    "id": "dd67730f073393e01f5354360800d6316c51d5be50638691c741df156e32df23",
+    "check": "reentrancy-benign",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[220]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
+   },
+   {
+    "id": "f5529eae69f974c802f7a78ae806b827a4af1867bc24a3c7fc975892d0d2d8c4",
+    "check": "reentrancy-benign",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[276]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+   },
+   {
+    "id": "9c822f6586318a1ec99719c28343c5e3309745afd3af5795b615d2b2f668d30c",
+    "check": "reentrancy-events",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[220]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
+   },
+   {
+    "id": "08ffc5ef25871da5c7a9ecf228a18af5327474cdd7ed3acb2e870d70e7e055a5",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[208]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L208-L213"
+   },
+   {
+    "id": "1157e2f164896e6b2922722b04ade5ba3d99fff6518b05a9482d29a78aab165d",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/AdapterRegistry.sol:[66]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L66-L77"
+   },
+   {
+    "id": "2752ac7dc8fb1ca693a2b3a7378fdd51da4b43fd55c78f71e16efe1388400604",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[153]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L153-L156"
+   },
+   {
+    "id": "34c11fce7aa3013cdb19cb7af947a144fe5fd0c269825afc71e6483a3ae999a2",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[481]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L481-L483"
+   },
+   {
+    "id": "40e85b6a38410a2ef11751bf973b568c0f651c5c6b825988a01d773c3ce2ca02",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/AdapterRegistry.sol:[42]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L42-L61"
+   },
+   {
+    "id": "4e80d1f8da573e512aca3db71ed2c96cc816b4979b625cc6b34bcd0f598e8272",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[267]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L267-L302"
+   },
+   {
+    "id": "6fa1ac3b0109d228295a55eedb96b8431635c5f43b6ae04e67ec354cce3001f4",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[212]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L212-L232"
+   },
+   {
+    "id": "7e9781cc3e6f84de1d469c3da49b1ae6c28527e469854148214d463f7e199e56",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/AdapterRegistry.sol:[83]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L83-L85"
+   },
+   {
+    "id": "80393f79b223bd772a863f73c31043edb0408f896dfec13643f535d48cb60c83",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[310]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
+   },
+   {
+    "id": "820ac560728014ede5a55bf31a7234d29418d3f9ba78e234a96fa8ece6beef2f",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[167]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L167-L188"
+   },
+   {
+    "id": "951ebb49cfc285f6711cfe594c50822b295ed9313bfdebf3b0c122a75bad407b",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[190]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L190-L203"
+   },
+   {
+    "id": "9d6ac666435f1d7256f5c9fc1c56680ae4187b31cf6d5b6c58d102a62e110ad6",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[248]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
+   },
+   {
+    "id": "a5da2d76a2a705e9af21c265b076b3d87492ad786afa18191594c40a112989e2",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/AdapterRegistry.sol:[93]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L93-L106"
+   },
+   {
+    "id": "beafdf6fb50ff26637fbc005c378d3228ffb08d386bc1efb279739d80d0d507d",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[346]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
+   },
+   {
+    "id": "c9a6ad2999e24ba4b3c3bdcf03c295158c3b5234d0050cbc43dd5f22f24d6102",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[158]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L158-L161"
+   },
+   {
+    "id": "ec787dd29cbced6afa903e98450aa45b2d50cc4763599608f573c672bc0e3e1e",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[386]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L386-L390"
+   },
+   {
+    "id": "ed7b7a587a90cba8cf26d80c0c6db27b2203d40d558a1b30dc5b19c20da2368b",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/adapters/PendlePTAdapter.sol:[460]",
+    "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L460-L470"
+   },
+   {
+    "id": "3222c6aa631971b77e8d3a5fe137ff5c5187aecbf29d09867755565837b8adf8",
+    "check": "naming-convention",
+    "impact": "Informational",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[241]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L241-L245"
+   },
+   {
+    "id": "3af4bc75591f15e9f7c2fa4b70a4c238ed522beee546cf14931b16fa78cfc99b",
+    "check": "naming-convention",
+    "impact": "Informational",
+    "confidence": "High",
+    "location": "src/interfaces/IPendleRouter.sol:[136]",
+    "first_markdown_element": "src/interfaces/IPendleRouter.sol#L136"
+   },
+   {
+    "id": "821e72bc5ebb24e16e1c8f5a653dbf0a1f5b61f9b8397416ee70dc67379f7bbd",
+    "check": "naming-convention",
+    "impact": "Informational",
+    "confidence": "High",
+    "location": "src/interfaces/IPendleCore.sol:[26]",
+    "first_markdown_element": "src/interfaces/IPendleCore.sol#L26"
+   },
+   {
+    "id": "a3f6d746f296e3682c4b5642cacbfe11ebf4db6a7e6db66ebc34f390d88ffeee",
+    "check": "naming-convention",
+    "impact": "Informational",
+    "confidence": "High",
+    "location": "src/interfaces/IPendleCore.sol:[27]",
+    "first_markdown_element": "src/interfaces/IPendleCore.sol#L27"
+   },
+   {
+    "id": "a86ee5e10795fc33113bb7a29287e9a8811401f9e8f273cb14fcf47813dcb5c6",
+    "check": "naming-convention",
+    "impact": "Informational",
+    "confidence": "High",
+    "location": "src/interfaces/ICurveStableSwapNG.sol:[22]",
+    "first_markdown_element": "src/interfaces/ICurveStableSwapNG.sol#L22"
+   },
+   {
+    "id": "f2915b529ea90fc2f602d9590690cd286eb9278f8ccacb5054fd2f733a312fa4",
+    "check": "naming-convention",
+    "impact": "Informational",
+    "confidence": "High",
+    "location": "src/interfaces/ICurveStableSwapNG.sol:[17]",
+    "first_markdown_element": "src/interfaces/ICurveStableSwapNG.sol#L17"
+   },
+   {
+    "id": "04dc703e2d4fb32bdcb4c0c837cf14011123843a4fbbbce30b1b412da5ce588d",
+    "check": "cache-array-length",
+    "impact": "Optimization",
+    "confidence": "High",
+    "location": "src/core/AdapterRegistry.sol:[100]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L100"
+   },
+   {
+    "id": "75a79f0331ffff1d014b63163644c38698d2b0f2b2eb5b32d491178c998b4765",
+    "check": "cache-array-length",
+    "impact": "Optimization",
+    "confidence": "High",
+    "location": "src/core/AdapterRegistry.sol:[95]",
+    "first_markdown_element": "src/core/AdapterRegistry.sol#L95"
+   },
+   {
+    "id": "3daea19eb5f0e2a5eb21ef8326a66f171037e462513090156df4fdf416115c25",
+    "check": "immutable-states",
+    "impact": "Optimization",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[39]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L39"
+   }
+  ]
+ }
+}

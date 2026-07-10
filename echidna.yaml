@@ -1,0 +1,14 @@
+# Echidna configuration — SIXX Vault property-based fuzzing
+# Phase-1 defense-in-depth (ADR-006) deep-search layer.
+# Run:  echidna . --contract SIXXVaultEchidna --config echidna.yaml
+# The contract-audit.sh harness overrides testLimit for deep vs. quick runs.
+
+testMode: property          # use echidna_* boolean predicates
+testLimit: 20000            # sequences per run (audit script raises this for deep runs)
+seqLen: 50                  # call-sequence length — deep enough to reach multi-user states
+shrinkLimit: 5000           # effort spent minimising any counterexample
+corpusDir: echidna-corpus   # coverage-guided corpus (gitignored)
+coverage: true
+# Senders kept default; the harness is the single depositor by design.
+# Keep timestamp/block fuzzing on so management-fee/lock windows are explored.
+allContracts: false

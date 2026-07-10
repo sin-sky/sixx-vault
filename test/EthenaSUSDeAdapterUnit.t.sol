@@ -421,4 +421,40 @@ contract EthenaSUSDeAdapterUnitTest is Test {
         susde.setRate(1.3e18); // sUSDe appreciates
         assertGt(adapter.totalAssets(), before);
     }
+
+    // ── ADR-007 #1: governance-settable slippage (depeg liveness lever) ─────────
+
+    function test_setSlippageBps_default_and_governanceUpdate() public {
+        assertEq(adapter.slippageBps(), 50, "default 0.5%");
+        assertEq(adapter.MAX_SLIPPAGE_BPS(), 300, "cap 3%");
+        vm.prank(governance);
+        adapter.setSlippageBps(200);
+        assertEq(adapter.slippageBps(), 200, "governance widened to 2%");
+    }
+
+    function test_setSlippageBps_onlyGovernance() public {
+        vm.prank(stranger);
+        vm.expectRevert("ADAPTER: not governance");
+        adapter.setSlippageBps(100);
+    }
+
+    function test_setSlippageBps_capEnforced() public {
+        vm.prank(governance);
+        vm.expectRevert("ADAPTER: slippage too high");
+        adapter.setSlippageBps(301); // over MAX_SLIPPAGE_BPS
+
+        vm.prank(governance);
+        adapter.setSlippageBps(300); // exactly the cap is allowed
+        assertEq(adapter.slippageBps(), 300);
+    }
+
+    /// @notice Widening slippage lowers the reported NAV (bigger haircut) — the honest,
+    ///         conservative mark that lets exits keep clearing during a depeg.
+    function test_wideningSlippage_lowersNavMark() public {
+        _vaultDeposit(10_000e6);
+        uint256 navBefore = adapter.totalAssets();
+        vm.prank(governance);
+        adapter.setSlippageBps(200); // 0.5% -> 2%
+        assertLt(adapter.totalAssets(), navBefore, "wider haircut => lower, honest NAV");
+    }
 }

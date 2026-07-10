@@ -14,17 +14,20 @@ contract StressUSDC is ERC20 {
     function decimals() public pure override returns (uint8) { return 6; }
 }
 
-/// @title Stress-exit freeze — PoC for Threat Council finding #1 (liveness, HIGH)
-/// @notice Documents (does NOT fix) the "cannot de-risk under stress" failure mode found by
-///         the 2026-07-11 threat council. When an adapter's realizable value drops below its
-///         reported NAV mark (`received < mark` — depeg / slippage beyond the haircut), the
-///         `require(received >= mark)` guard (M13-16) makes BOTH user withdrawal AND
-///         governance detach revert. The emergency-shutdown valve is resilient to a reverting
-///         `withdraw` (try/catch) but is BRITTLE to a reverting `totalAssets()` (read outside
-///         the try/catch). These tests pin the current behaviour so a future core fix
-///         (force-detach + totalAssets try/catch — see workspace ADR-007, requires SHIN
-///         sign-off + re-audit) has an explicit target; they will be flipped when it lands.
-/// @dev Mark > realizable is modelled with FaultyAdapter.setDeliverBps(< 10000).
+/// @title Stress-exit freeze — Threat Council finding #1 (liveness, HIGH) + ADR-007 #1 fix
+/// @notice Threat council (2026-07-11) found that when an adapter's realizable value drops
+///         below its reported NAV mark (depeg / slippage beyond the haircut), the
+///         `require(received >= mark)` guard (M13-16) froze de-risking. ADR-007 #1 (SHIN
+///         approved 2026-07-11) lands the MINIMAL fix — force-detach try/catch on
+///         setAdapter(address(0)) + totalAssets fault-tolerance on setAdapter/shutdown
+///         (+ an Ethena governance slippage setter, tested separately). These tests now
+///         assert the FIXED behaviour:
+///           #1 a single user still cannot over-extract past realizable (per-user guard kept);
+///           #2 governance CAN force-detach to idle and users then exit pro-rata at honest NAV;
+///           #3 emergency shutdown survives a reverting withdraw (unchanged, try/catch);
+///           #4 emergency shutdown now survives a reverting totalAssets() (fixed).
+/// @dev Mark > realizable is modelled with FaultyAdapter.setDeliverBps(< 10000);
+///      a broken oracle with FaultyAdapter.setRevertOnTotalAssets(true).
 contract StressExitFreezeTest is Test {
     StressUSDC      usdc;
     AdapterRegistry registry;
@@ -71,14 +74,27 @@ contract StressExitFreezeTest is Test {
         vault.redeem(shares, alice, alice); // <-- FROZEN: user's own funds are stuck
     }
 
-    /// #2 — Governance cannot detach/pause the strategy (setAdapter(0)) under the same shortfall.
-    ///      Exactly when you most want to de-risk, migration is impossible.
-    function test_stress_governanceDetach_bricks_whenRealizableBelowMark() public {
-        faulty.setDeliverBps(9_900);
+    /// #2 — ADR-007 #1 FIX: governance can force-detach (setAdapter(0)) even under a
+    ///      shortfall. It recovers the realizable amount to idle, writes off the (small,
+    ///      real) mark>realizable gap, and — crucially — users can then withdraw pro-rata
+    ///      from idle at the honest NAV. De-risking is no longer frozen.
+    function test_forceDetach_succeeds_underShortfall_thenUsersExitProRata() public {
+        faulty.setDeliverBps(9_900); // realizable = 99% of the NAV mark
 
         vm.prank(governance);
-        vm.expectRevert(bytes("VAULT: adapter shortfall"));
-        vault.setAdapter(address(0)); // <-- FROZEN: cannot even pause to idle
+        vault.setAdapter(address(0)); // force-detach: MUST NOT revert now
+
+        // Detached to idle; realized 99% recovered, the 1% mark gap written off.
+        assertEq(vault.activeAdapter(), address(0), "strategy paused to idle");
+        assertEq(usdc.balanceOf(address(vault)), (AMOUNT * 9_900) / 10_000, "realized recovered to idle");
+        assertApproxEqAbs(vault.totalAssets(), (AMOUNT * 9_900) / 10_000, 1, "NAV = honest realized value");
+
+        // Collective liveness restored: Alice exits from idle at the honest (reduced) NAV.
+        uint256 shares = vault.balanceOf(alice);
+        uint256 balBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        vault.redeem(shares, alice, alice); // succeeds from idle — no adapter shortfall guard
+        assertApproxEqAbs(usdc.balanceOf(alice) - balBefore, (AMOUNT * 9_900) / 10_000, 2, "Alice exits pro-rata");
     }
 
     /// #3 — The emergency-shutdown valve IS resilient to a fully-frozen `withdraw` (try/catch):
@@ -93,13 +109,16 @@ contract StressExitFreezeTest is Test {
         assertEq(vault.maxDeposit(address(0)), 0, "shutdown active after frozen withdraw");
     }
 
-    /// #4 — RESIDUAL HOLE: the same valve is bricked when the adapter's `totalAssets()` reverts,
-    ///      because it is read OUTSIDE the try/catch. Emergency shutdown then reverts wholesale.
-    function test_stress_emergencyShutdown_bricks_whenTotalAssetsReverts() public {
+    /// #4 — ADR-007 #1 FIX: the emergency valve now takes effect even when the adapter's
+    ///      `totalAssets()` reverts (read moved inside try/catch). The flag flips and new
+    ///      deposits are blocked; governance can then choose to wait for recovery or
+    ///      force-detach. Previously this reverted wholesale (valve bricked).
+    function test_emergencyShutdown_survives_whenTotalAssetsReverts() public {
         faulty.setRevertOnTotalAssets(true); // e.g. Pendle TWAP oracle not ready
 
         vm.prank(governance);
-        vm.expectRevert(bytes("FAULTY: totalAssets reverts"));
-        vault.setEmergencyShutdown(true); // <-- FROZEN: even the emergency valve is blocked
+        vault.setEmergencyShutdown(true); // MUST NOT revert now
+
+        assertEq(vault.maxDeposit(address(0)), 0, "shutdown active despite reverting totalAssets");
     }
 }

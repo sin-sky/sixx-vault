@@ -694,6 +694,51 @@ contract SIXXVaultTest is Test {
         assertApproxEqAbs(vault.totalDebt(), 0, 2, "debt decremented on full recall");
     }
 
+    /// @notice Partial recall decrements totalDebt() by exactly the recalled amount (not more,
+    ///         not added). Pins the `_totalDebt - received` arithmetic where debt > received
+    ///         strictly (full-exit hits the ==0 branch and can't distinguish the operator).
+    function test_totalDebt_partialRecall_decrementsByRecalled() public {
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+        assertApproxEqAbs(vault.totalDebt(), amount, 2, "debt = deployed principal");
+
+        // Redeem half → recall ~half; debt must drop to ~half (strictly debt > received).
+        vm.prank(alice);
+        vault.redeem(shares / 2, alice, alice);
+        assertApproxEqAbs(vault.totalDebt(), amount / 2, 3, "debt decremented by recalled amount");
+    }
+
+    /// @notice After a strategy migration, totalDebt() equals the freshly redeployed principal
+    ///         (the reset-to-0 then redeploy). Pins the `_totalDebt = 0` reset in setAdapter.
+    function test_totalDebt_resetThenRedeploy_onMigration() public {
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        MockAdapter fresh = new MockAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(fresh), "DeFi", "Mock v2");
+        vault.setAdapter(address(fresh)); // recall(=amount) → reset 0 → redeploy(amount)
+        vm.stopPrank();
+
+        // Exact (no tolerance): MockAdapter delivers 100%, so the reset-to-0 then redeploy
+        // yields exactly `amount`. A tolerance would mask the `_totalDebt = 0 -> 1` mutation.
+        assertEq(vault.totalDebt(), amount, "debt = redeployed principal after migration");
+    }
+
+    /// @notice setFeeRecipient rejects the zero address. Kills the RequireMutation that
+    ///         weakens `newRecipient != address(0)` to `true`.
+    function test_setFeeRecipient_rejectsZero() public {
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: zero address"));
+        vault.setFeeRecipient(address(0));
+    }
+
     /// @notice Depositing while the strategy is paused (activeAdapter == address(0)) holds
     ///         funds idle and does NOT attempt to push to the zero adapter. Kills the
     ///         IfStatementMutation on the `_deployToAdapter` `activeAdapter == address(0)`

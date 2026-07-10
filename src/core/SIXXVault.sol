@@ -285,17 +285,38 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
         // Recall everything from current adapter
         if (activeAdapter != address(0)) {
-            uint256 adapterBal = IStrategyAdapter(activeAdapter).totalAssets();
-            if (adapterBal > 0) {
-                // M13-16 (Medium-A): apply the same balance-delta guard as
-                //         _recallFromAdapter. Measure the real amount received and
-                //         require it covers the full recall, so an adapter that
-                //         silently under-delivers during migration reverts here
-                //         instead of letting the vault switch away with funds stranded.
-                uint256 balBefore = IERC20(asset()).balanceOf(address(this));
-                IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this));
-                uint256 received = IERC20(asset()).balanceOf(address(this)) - balBefore;
-                require(received >= adapterBal, "VAULT: adapter shortfall");
+            if (newAdapter == address(0)) {
+                // ADR-007 #1 — FORCE-DETACH (pause to idle): best-effort recall so
+                //   governance can ALWAYS pause, even when the adapter under-delivers or
+                //   its totalAssets() reverts (a depeg / not-ready oracle must not freeze
+                //   the pause valve). The realized amount is booked; any unrecovered
+                //   remainder is written off from NAV — a deliberate, timelocked
+                //   governance action surfaced via AdapterForceDetached.
+                address det = activeAdapter;
+                uint256 marked;
+                try IStrategyAdapter(det).totalAssets() returns (uint256 b) { marked = b; }
+                catch { marked = 0; }
+                uint256 received;
+                if (marked > 0) {
+                    uint256 balBefore = IERC20(asset()).balanceOf(address(this));
+                    try IStrategyAdapter(det).withdraw(marked, address(this)) { } catch { }
+                    received = IERC20(asset()).balanceOf(address(this)) - balBefore;
+                }
+                emit AdapterForceDetached(det, marked, received);
+            } else {
+                // MIGRATION (unchanged, strict) — M13-16 (Medium-A): apply the
+                //   balance-delta guard. Require the real amount received covers the full
+                //   recall, so an adapter that silently under-delivers reverts here instead
+                //   of letting the vault switch to a NEW adapter with funds stranded. To
+                //   pause a shorting/frozen adapter, use setAdapter(address(0)) (force-detach
+                //   above) or emergency shutdown.
+                uint256 adapterBal = IStrategyAdapter(activeAdapter).totalAssets();
+                if (adapterBal > 0) {
+                    uint256 balBefore = IERC20(asset()).balanceOf(address(this));
+                    IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this));
+                    uint256 received = IERC20(asset()).balanceOf(address(this)) - balBefore;
+                    require(received >= adapterBal, "VAULT: adapter shortfall");
+                }
             }
             _totalDebt = 0;
         }
@@ -389,14 +410,21 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         //    unfreezes (users withdraw via _recallFromAdapter; deposits are blocked).
         emergencyShutdown = active;
         if (active && activeAdapter != address(0)) {
-            // Recall all assets to vault for safe withdrawal by users
-            uint256 adapterBal = IStrategyAdapter(activeAdapter).totalAssets();
-            if (adapterBal > 0) {
-                try IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this)) {
-                    _totalDebt = 0;
-                } catch {
-                    emit AdapterRecallFailed(activeAdapter, adapterBal);
+            // Recall all assets to vault for safe withdrawal by users.
+            // ADR-007 #1: read the mark defensively — a reverting totalAssets() (e.g. a
+            // not-ready oracle) must NOT brick the emergency valve. On failure, skip the
+            // recall; activeAdapter is unchanged so the funds stay counted in totalAssets()
+            // and remain recoverable once the adapter unfreezes.
+            try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 adapterBal) {
+                if (adapterBal > 0) {
+                    try IStrategyAdapter(activeAdapter).withdraw(adapterBal, address(this)) {
+                        _totalDebt = 0;
+                    } catch {
+                        emit AdapterRecallFailed(activeAdapter, adapterBal);
+                    }
                 }
+            } catch {
+                emit AdapterRecallFailed(activeAdapter, 0);
             }
         }
         emit EmergencyShutdown(active);

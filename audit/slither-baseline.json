@@ -1,5 +1,5 @@
 {
- "_note": "Slim Slither baseline (allowlist) for contract-audit.sh. Human canon: threads/sixx-vault/SLITHER_TRIAGE.md. Regenerate via ./scripts/contract-audit.sh --update-slither-baseline (writes full JSON; re-slim if committing).",
+ "_note": "Slim Slither baseline (allowlist) for contract-audit.sh. Human canon: audit/SLITHER_TRIAGE.md + AUDIT_PACKAGE.md. Regenerate after triaging intentional changes.",
  "results": {
   "detectors": [
    {
@@ -11,12 +11,12 @@
     "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
    },
    {
-    "id": "7f878574ce359d92149af5e1aa1dceb28ae0e9a1d9372b75de96aa7d670d8224",
+    "id": "b5246216e5e79f2217749d59193c0cedc5f4ad438bddcae5f4569e0d3b526112",
     "check": "reentrancy-balance",
     "impact": "High",
     "confidence": "Medium",
     "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
    },
    {
     "id": "be52b2507b29e6a40eb78a683f6f456cab1d8ff42249c2219750fd6857b3cd0c",
@@ -27,7 +27,7 @@
     "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
    },
    {
-    "id": "f00e81af3a8f56d31aa82304c95f315efc2325e6de8829a8d4349b7103ae2cf6",
+    "id": "f8458019e7c717b37e685e23a05fed1956c77ba25a35ea2b87ffd3bfad64b89c",
     "check": "reentrancy-balance",
     "impact": "High",
     "confidence": "Medium",
@@ -51,20 +51,28 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "58ff68902ff69cab519a39c2078a845d01a06fa9df42beedbc14530e9fb49619",
+    "id": "dc608952aec46d6d44c267e7ed6daf11781594dd80739a3a9a032c54ee568f09",
     "check": "divide-before-multiply",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[346]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
+    "location": "src/core/SIXXVault.sol:[367]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
    },
    {
-    "id": "2c72a8405792e70ca4779ae1b84797ddc8d325d5912648f8a4b8eabf9c2ac358",
+    "id": "016e52fdd02ffaa0462b5396d44ad4c22db2e6bde3e752ad9b35b433ce51cfa1",
     "check": "incorrect-equality",
     "impact": "Medium",
     "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[346]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
+    "location": "src/core/SIXXVault.sol:[367]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
+   },
+   {
+    "id": "36c2c5f13eec207e0faac115a66091bf19857696f7d086f6469815ac2be3ccab",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/core/SIXXVault.sol:[367]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
    },
    {
     "id": "49e3bf525bf7f4c201e315db2f4ea7fec34bf091df1f02625eb31e3825fcc476",
@@ -91,28 +99,20 @@
     "first_markdown_element": "src/core/AdapterRegistry.sol#L83-L85"
    },
    {
-    "id": "718a04a25218d8c02a8eadb81754c60b4071f4f2ebff01a706994ffd2269b77c",
-    "check": "incorrect-equality",
-    "impact": "Medium",
-    "confidence": "High",
-    "location": "src/core/SIXXVault.sol:[346]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
-   },
-   {
-    "id": "a758720a4b455d8ac2668d16e92170ef4a6b1a00b154789a242157ce13819a46",
-    "check": "incorrect-equality",
-    "impact": "Medium",
-    "confidence": "High",
-    "location": "src/adapters/EthenaSUSDeAdapter.sol:[226]",
-    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L226-L233"
-   },
-   {
     "id": "b5ef100bf1f4447ae1dce8e479a3d31a9b1c9cf6a8593b59ad32398e11780ec3",
     "check": "incorrect-equality",
     "impact": "Medium",
     "confidence": "High",
     "location": "src/core/AdapterRegistry.sol:[93]",
     "first_markdown_element": "src/core/AdapterRegistry.sol#L93-L106"
+   },
+   {
+    "id": "bd5787cabb7a4be79394ff3b38e0763e666a73f06485f2ddc357f4aa991bcde7",
+    "check": "incorrect-equality",
+    "impact": "Medium",
+    "confidence": "High",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[233]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L233-L240"
    },
    {
     "id": "c03fb0c8a9bfff913497eb985246f485fc05bfb7f30deb92b49a0515d2ae8277",
@@ -139,12 +139,12 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L257-L262"
    },
    {
-    "id": "1c5360d8eb18fe9f24d349c57b9272bc6ceea98fbb37b4e4db4f398ca1bce59c",
+    "id": "ca34a47e405c982ed444246cbc851a5e3dfbff7651cdcb75e5e64313dd35c841",
     "check": "reentrancy-no-eth",
     "impact": "Medium",
     "confidence": "Medium",
     "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
    },
    {
     "id": "5b2a3eacd9f611d96462890fd1b9221106804a9d0b19a34d30c9698149795a38",
@@ -155,6 +155,14 @@
     "first_markdown_element": "src/core/AdapterRegistry.sol#L99"
    },
    {
+    "id": "9ee7f3519da8799d4d753efccdc0d5536781670b301a8e8edce714229b37765e",
+    "check": "uninitialized-local",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[299]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L299"
+   },
+   {
     "id": "ac97165fc3079fa27b4b03e6da0bc10a67b1ab9323e5e4345fdccbdbb8680b69",
     "check": "uninitialized-local",
     "impact": "Medium",
@@ -163,12 +171,28 @@
     "first_markdown_element": "src/core/AdapterRegistry.sol#L94"
    },
    {
-    "id": "1feec60847a5f8525cf0087adecf03ab1cbbaccbf8c050d5735b0104b4b4d29e",
+    "id": "dd34284e465ce50389dcf176a11e2b55435f3e466736c9bbabf4438f440fba37",
+    "check": "uninitialized-local",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[296]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L296"
+   },
+   {
+    "id": "0be41702cd92070435e70a4bc058c9efbb2dc0488d2e511ea6603a4294362ba2",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
     "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
+   },
+   {
+    "id": "1a8b7fb5b1affc2669caa1df31db952775c10a5f8f88955c10f40c70bdc65bee",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[274]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L274-L319"
    },
    {
     "id": "26c875881659d6e2d3499d3c540b113daf27fff01eddf228027169cfd05749dc",
@@ -179,12 +203,28 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L212-L232"
    },
    {
+    "id": "3da5d8722f61e3632b2fc009360d6caaee57dbf35e928fc486d16c428e7e33a9",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[243]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L243-L265"
+   },
+   {
     "id": "3e2ca22242c45e9315adf4df9914313438abfd6443a39525d1c7cbc6e26897ce",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
     "location": "src/adapters/PendlePTAdapter.sol:[310]",
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
+   },
+   {
+    "id": "41f9fc6dbf18ab164975cd959bb1910bbf2457e112739d737741d81c60a3ce04",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[400]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L400-L431"
    },
    {
     "id": "4a921d06d4e451d51bcac8e8153953b13b714aff7b68f7eccb0d8f89b956d676",
@@ -195,28 +235,12 @@
     "first_markdown_element": "src/core/SIXXVault.sol#L248-L267"
    },
    {
-    "id": "5a1b9f462ee1c1ebcad4f647037e6ac8bb6eb91fd7432499be5b3fe06fcbb1ac",
+    "id": "6fccb13f92c440ad1d29851c64547f81f9ac617a22fd4755ae7e681bc67b248f",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[379]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L379-L403"
-   },
-   {
-    "id": "5fd6bc7fca7cbb99a28497688d2f018b4cabc90c927370dd880a7bc90abfa67e",
-    "check": "unused-return",
-    "impact": "Medium",
-    "confidence": "Medium",
-    "location": "src/adapters/EthenaSUSDeAdapter.sol:[236]",
-    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L236-L258"
-   },
-   {
-    "id": "67fb408b2aae911d0d3febe172f9793ab230ff3ce9f179cf778bfb74cca64c8d",
-    "check": "unused-return",
-    "impact": "Medium",
-    "confidence": "Medium",
-    "location": "src/adapters/EthenaSUSDeAdapter.sol:[267]",
-    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L267-L312"
+    "location": "src/core/SIXXVault.sol:[276]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
    },
    {
     "id": "73f919f3253985fd67af053be95add521d087e16f38152f20120715cf35c2196",
@@ -235,6 +259,14 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L267-L302"
    },
    {
+    "id": "7835a46043ebb00993aedae7c2811dbe67d3056cfab53a85372c0172f65d22f2",
+    "check": "unused-return",
+    "impact": "Medium",
+    "confidence": "Medium",
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[243]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L243-L265"
+   },
+   {
     "id": "9edd2e58b1afdd2e0889bd7e151394d51d185898d3765c051899c6aae0f31141",
     "check": "unused-return",
     "impact": "Medium",
@@ -243,20 +275,12 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "b3a392731d20eb8999b965dac000bd640dc651629eb4f3b35797bc81c024e701",
+    "id": "b12c760dc93036b728ad2c0523416a9d608a3d56f983ea249df3f184700ad224",
     "check": "unused-return",
     "impact": "Medium",
     "confidence": "Medium",
-    "location": "src/adapters/EthenaSUSDeAdapter.sol:[267]",
-    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L267-L312"
-   },
-   {
-    "id": "cae7b86a5242fe7cd757200d4e0a1389cc452159348289dad18c4e69ccfa383f",
-    "check": "unused-return",
-    "impact": "Medium",
-    "confidence": "Medium",
-    "location": "src/adapters/EthenaSUSDeAdapter.sol:[236]",
-    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L236-L258"
+    "location": "src/adapters/EthenaSUSDeAdapter.sol:[274]",
+    "first_markdown_element": "src/adapters/EthenaSUSDeAdapter.sol#L274-L319"
    },
    {
     "id": "d7c61de98b303dfebd0e77f289e7521ced10e52008a9a3d708adddbc2403967b",
@@ -275,12 +299,12 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L310-L371"
    },
    {
-    "id": "28eb704965694e593cb91de4cbe13ad868cc1ecc9a870642c70622d50895ef4c",
+    "id": "dfcc47dbb3207d2a8349bdc8fdf1936363f31ca80c8e70dda1ec224534ce58a9",
     "check": "events-maths",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[331]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L331-L334"
+    "location": "src/core/SIXXVault.sol:[352]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L352-L355"
    },
    {
     "id": "c70865536526538e2a2b176a7442f60acb1255f97bad7b9b0a61879061e101d3",
@@ -291,12 +315,20 @@
     "first_markdown_element": "src/core/SIXXVault.sol#L72"
    },
    {
-    "id": "89d7719c277970a517a347bd399631406f09792ddeb02e05b92b526e7a34ae8d",
+    "id": "25f4c6918041519feee07f6255d558324789ebcbedfe17cb7dbac0b7e78c4e3c",
     "check": "reentrancy-benign",
     "impact": "Low",
     "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[379]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L379-L403"
+    "location": "src/core/SIXXVault.sol:[400]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L400-L431"
+   },
+   {
+    "id": "9f80039ecd1c486e77934ceb1525e70e260c5c3f1a1cf1e97f403988c7e5c4ac",
+    "check": "reentrancy-benign",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[276]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L276-L332"
    },
    {
     "id": "c15c2616a61d008e67f680330476e116fb2cb041b0e4f87a99033b9d76799a81",
@@ -313,14 +345,6 @@
     "confidence": "Medium",
     "location": "src/core/SIXXVault.sol:[220]",
     "first_markdown_element": "src/core/SIXXVault.sol#L220-L236"
-   },
-   {
-    "id": "f5529eae69f974c802f7a78ae806b827a4af1867bc24a3c7fc975892d0d2d8c4",
-    "check": "reentrancy-benign",
-    "impact": "Low",
-    "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[276]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L276-L311"
    },
    {
     "id": "9c822f6586318a1ec99719c28343c5e3309745afd3af5795b615d2b2f668d30c",
@@ -379,6 +403,14 @@
     "first_markdown_element": "src/adapters/PendlePTAdapter.sol#L267-L302"
    },
    {
+    "id": "6dd5f8bb445341a8c1337d4bfa171cd34acb479881534aea3a0d15a1febfcd22",
+    "check": "timestamp",
+    "impact": "Low",
+    "confidence": "Medium",
+    "location": "src/core/SIXXVault.sol:[367]",
+    "first_markdown_element": "src/core/SIXXVault.sol#L367-L394"
+   },
+   {
     "id": "6fa1ac3b0109d228295a55eedb96b8431635c5f43b6ae04e67ec354cce3001f4",
     "check": "timestamp",
     "impact": "Low",
@@ -433,14 +465,6 @@
     "confidence": "Medium",
     "location": "src/core/AdapterRegistry.sol:[93]",
     "first_markdown_element": "src/core/AdapterRegistry.sol#L93-L106"
-   },
-   {
-    "id": "beafdf6fb50ff26637fbc005c378d3228ffb08d386bc1efb279739d80d0d507d",
-    "check": "timestamp",
-    "impact": "Low",
-    "confidence": "Medium",
-    "location": "src/core/SIXXVault.sol:[346]",
-    "first_markdown_element": "src/core/SIXXVault.sol#L346-L373"
    },
    {
     "id": "c9a6ad2999e24ba4b3c3bdcf03c295158c3b5234d0050cbc43dd5f22f24d6102",

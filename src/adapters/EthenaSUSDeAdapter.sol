@@ -55,9 +55,15 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
 
     uint256 private constant MAX_BPS = 10_000;
 
-    /// @notice Max tolerated slippage on any DEX leg, in bps (0.5%). Swaps whose
-    ///         realized output falls below the convertToAssets-derived floor revert.
-    uint256 public constant MAX_SLIPPAGE_BPS = 50;
+    /// @notice ADR-007 #1 — hard ceiling on the slippage tolerance governance can set (3%).
+    uint256 public constant MAX_SLIPPAGE_BPS = 300;
+
+    /// @notice Tolerated slippage on any DEX leg, in bps (default 0.5%). Doubles as the NAV
+    ///         haircut in totalAssets(). Governance can WIDEN this (up to MAX_SLIPPAGE_BPS) so
+    ///         exits keep clearing during a USDe/crvUSD depeg instead of reverting — at an
+    ///         honest, lower NAV mark — then tighten it back once the peg recovers.
+    ///         Swaps whose realized output falls below the derived floor still revert.
+    uint256 public slippageBps = 50;
 
     /// @notice USDe/sUSDe/crvUSD are 18-decimal; USDC is 6-decimal. Scale = 1e12.
     uint256 private constant USDE_TO_USDC_SCALE = 1e12;
@@ -125,6 +131,7 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
     event GovernanceAccepted(address indexed newGovernance);
     event TokenRescued(address indexed token, address indexed to, uint256 amount);
     event EstimatedAPYUpdated(uint256 oldBps, uint256 newBps);
+    event SlippageUpdated(uint256 oldBps, uint256 newBps);
 
     // =========================================
     // Constructor
@@ -227,7 +234,7 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
         uint256 shares = susde.balanceOf(address(this));
         if (shares == 0) return 0;
         // multiply-before-divide (more precise); final floor is vault-favorable.
-        return (susde.convertToAssets(shares) * (MAX_BPS - MAX_SLIPPAGE_BPS))
+        return (susde.convertToAssets(shares) * (MAX_BPS - slippageBps))
             / MAX_BPS
             / USDE_TO_USDC_SCALE;
     }
@@ -244,7 +251,7 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
         require(assets > 0, "ADAPTER: zero amount");
 
         // Entry slippage floor: at least (1 - 0.5%) of par (1 USDC ~= 1 USDe).
-        uint256 minUsde = (assets * USDE_TO_USDC_SCALE * (MAX_BPS - MAX_SLIPPAGE_BPS)) / MAX_BPS;
+        uint256 minUsde = (assets * USDE_TO_USDC_SCALE * (MAX_BPS - slippageBps)) / MAX_BPS;
 
         uint256 usdeBefore = usde.balanceOf(address(this));
         entryPool.exchange(entryUsdcIndex, entryUsdeIndex, assets, minUsde);
@@ -285,7 +292,7 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
             // Sell sUSDe worth `assets` USDC grossed up by 1/(1-slippage) so that,
             // after slippage, the vault still receives at least `assets`.
             uint256 targetUsde =
-                (assets * USDE_TO_USDC_SCALE * MAX_BPS) / (MAX_BPS - MAX_SLIPPAGE_BPS);
+                (assets * USDE_TO_USDC_SCALE * MAX_BPS) / (MAX_BPS - slippageBps);
             sharesToSell = susde.convertToShares(targetUsde);
             if (sharesToSell > shares || sharesToSell == 0) sharesToSell = shares;
         }
@@ -293,7 +300,7 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
         // Slippage floor for the whole route: >= (1 - 0.5%) of the sold sUSDe's
         // convertToAssets (fair) value, expressed in USDC. Multiply-before-divide
         // mirrors totalAssets() so drain-all's floor equals the reported NAV.
-        uint256 minUsdcOut = (susde.convertToAssets(sharesToSell) * (MAX_BPS - MAX_SLIPPAGE_BPS))
+        uint256 minUsdcOut = (susde.convertToAssets(sharesToSell) * (MAX_BPS - slippageBps))
             / MAX_BPS
             / USDE_TO_USDC_SCALE;
 
@@ -382,6 +389,16 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
         require(msg.sender == governance, "ADAPTER: not governance");
         emit EstimatedAPYUpdated(_estimatedApyBps, newBps);
         _estimatedApyBps = newBps;
+    }
+
+    /// @notice ADR-007 #1 — set the DEX slippage tolerance / NAV haircut (bps, <= 3%).
+    ///         Widen during a depeg so exits keep clearing at an honest, lower NAV; tighten
+    ///         back once the peg recovers. Bounded by MAX_SLIPPAGE_BPS.
+    function setSlippageBps(uint256 newBps) external {
+        require(msg.sender == governance, "ADAPTER: not governance");
+        require(newBps <= MAX_SLIPPAGE_BPS, "ADAPTER: slippage too high");
+        emit SlippageUpdated(slippageBps, newBps);
+        slippageBps = newBps;
     }
 
     // M-4: 2-step vault rotation

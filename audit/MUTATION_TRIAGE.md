@@ -66,3 +66,22 @@
 2. それ以外の `survived` → **新規 test gap**。テストを追加して kill するか、等価と実証して本ファイルに追記。
 3. `mutation-report.md` の raw score が下がった → まず本ファイルの既知2件を差し引いた**実効スコア**で評価。
    実効 < 100% なら未トリアージの新規生存がある。
+
+---
+
+## 追補（2026-07-11・ADR-007 #1 実装後）
+
+`setAdapter` force-detach／`setEmergencyShutdown` 耐障害化／Ethena slippage setter を追加。src 変更で
+ミュータント集合（seed=0/N=60）が入れ替わり、旧 run の生存（`_totalDebt` bookkeeping ×3・`setFeeRecipient`
+zero-check ×1）を以下のテストで解消：
+
+| 対象 | 追加テスト | 備考 |
+|---|---|---|
+| `setFeeRecipient` の `!= address(0)` | `test_setFeeRecipient_rejectsZero` | 実ガード（`collectFees` も feeRecipient==0 を guard 済で二重防御） |
+| `_totalDebt - received`（partial recall） | `test_totalDebt_partialRecall_decrementsByRecalled` | full-exit は `==0` 分岐で演算子を区別不能ゆえ partial で pin |
+| `_totalDebt = 0`（migration reset） | `test_totalDebt_resetThenRedeploy_onMigration`（**assertEq＝許容0**） | 許容誤差は `=0→=1` 変異を見逃すため厳密一致 |
+
+- **`_totalDebt` は bookkeeping 専用**＝write（L232/266/321/421）と getter（L469 `totalDebt()`）のみで、
+  require/branch/会計 decision に一切使われない（検証済）。安全上は等価だが public getter ゆえ pin した。
+- **最終結果（本サンプル）＝60/60 killed・100%・生存0**。EQ-1/EQ-2（`_recallFromAdapter` 到達不能ガード・
+  `collectFees` elapsed==0）は本サンプル未抽出。出現時は等価として扱う（本書 EQ-1/EQ-2）。

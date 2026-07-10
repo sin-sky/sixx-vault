@@ -100,4 +100,10 @@ interface ISIXXVault is IERC4626 {
     ///      the shutdown still takes effect (activeAdapter unchanged, funds remain
     ///      counted and recoverable once the adapter unfreezes).
     event AdapterRecallFailed(address indexed adapter, uint256 amount);
+    /// @dev ADR-007 #1: Emitted when governance force-detaches (pauses to idle) an
+    ///      adapter via setAdapter(address(0)) using a best-effort recall. `marked` is the
+    ///      adapter's reported NAV at detach; `received` is what was actually recalled to
+    ///      idle. Any (marked - received) shortfall is written off from NAV — a deliberate,
+    ///      timelocked governance action that keeps the pause valve always available.
+    event AdapterForceDetached(address indexed adapter, uint256 marked, uint256 received);
 }

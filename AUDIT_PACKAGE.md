@@ -1,5 +1,17 @@
 # SIXX Vault — 外部監査パッケージ（ベンダー向け入口）
 
+> ## 🔒 ROUND 2（最終ハードニング形・2026-07-11）— 現行の凍結
+> **凍結コミット（監査対象）＝`b939dd2`（branch `main`）。** ①②③（ADR-007）実装済＝vault ハードニング一巡。
+> - **入口1枚＝`audit/README_FOR_REVIEWER.md`**（build/test 手順・重点箇所・既知FP/等価変異）。スコープは `audit/SCOPE.md`（自前 .sol 実測 LoC）。
+> - **本ラウンドの契約変更（ADR-007 #1/#2/#3）**：①退出 liveness（force-detach try/catch＋totalAssets 耐障害化＋Ethena governance slippage setter）／②profit-streaming（locked-profit degradation＝構造的 JIT 防御）／③fee crystallize-on-interaction（後入者非希薄化）。設計＝workspace `ADR-007`、脅威分析＝`audit/THREAT_COUNCIL_2026-07-11.md`。
+> - **テスト**：非fork **154 pass**・SIXXVault カバレッジ **95.74%**・invariant 5／Echidna 3／Halmos pilot 1・**mutation 100%**（`audit/MUTATION_TRIAGE.md`）・Slither 差分ゲート green（`slither-b939dd2.json`／`audit/SLITHER_TRIAGE.md`／`audit/slither-baseline.json`）。フォークは要 RPC（Codespace 実走）。
+> - **スコープ**：SIXXVault / AdapterRegistry ＋ 4アダプター（Aave/Venus/Ethena/Pendle）＋ interface（`audit/SCOPE.md` 2,763行/16ファイル）。④permit forwarder は**別ラウンド**（vault は非カストディ・無欠陥。keeper/frontend/custody-auditor 管轄）。
+> - **④以外は本ラウンドで確定**。以降の変更は監査ベンダー合意の上で。
+>
+> ⚠️ 以下（§1〜）は **ROUND 1（2026-07-09・凍結 `3d55dc5`・USD 系4コア・92 pass）の歴史的記録**。数値/スコープは Round 2 で上記に更新済み。
+
+---
+
 > 2026-07-09 作成。外部監査ベンダーが**最初に読む索引**。詳細な自前ハードニング記録は `PRE_AUDIT_HARDENING.md`、コード規約は `CLAUDE.md` を参照。
 > **凍結コミット（監査対象）**: `3d55dc5`（branch `main`）。以降の変更は監査ベンダーと合意の上で。
 

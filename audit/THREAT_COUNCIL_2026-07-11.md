@@ -6,6 +6,8 @@
 
 ---
 
+> **🔧 実装状況（2026-07-11 更新）**：本合議で HIGH と判定した **①退出 liveness／②離散収穫 JIT／③手数料公平性は ADR-007 で実装済**（vault 凍結 `b939dd2`・自己監査全 green・mutation 100%）。**④Keeper 一時カストディは別ラウンド**（vault は非カストディ・無欠陥＝affliate-api keeper＋frontend＋custody-auditor 管轄）。⑤⑥ の LOW は運用規約＋follow-up。詳細＝workspace `ADR-007`／`README_FOR_REVIEWER.md`。
+
 ## 結論
 
 - **JIT（同一ブロック往復益）は現行デプロイでは実質死んでいる**：4アダプター全て連続 accrual・`harvest()` は no-op・出入金手数料ゼロ＝前取りできる離散段差が存在しない。→ **JIT はこのままで良い**。

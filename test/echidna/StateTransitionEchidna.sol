@@ -140,4 +140,17 @@ contract StateTransitionEchidna {
         vault.totalAssets();
         return true;
     }
+
+    /// MINV-1/5 (multi-adapter): NAV counts ONLY idle + the ACTIVE adapter — a detached /
+    /// retired adapter (even faulty or holding stranded funds) never phantom-counts. Exercised
+    /// as the harness migrates/detaches among the 3-adapter pool with per-adapter faults.
+    function echidna_no_phantom_cross_adapter() public view returns (bool) {
+        uint256 idle = usdc.balanceOf(address(vault));
+        uint256 activeContribution = 0;
+        if (activeIdx >= 0) {
+            FaultInjectingAdapter a = pool[uint256(activeIdx)];
+            activeContribution = a.revertOnTotalAssets() ? vault.totalDebt() : a.realBalance();
+        }
+        return vault.totalAssets() <= idle + activeContribution + TOL;
+    }
 }

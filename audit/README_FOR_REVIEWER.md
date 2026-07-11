@@ -8,7 +8,7 @@
 ## 0. 一言サマリ
 
 ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で単一原資産を運用。実資金（USDC/USDT 等）
-を扱う。**自前 Solidity 3,112 行 / 17 ファイル**が監査対象（`audit/SCOPE.md`）。
+を扱う。**自前 Solidity 3,156 行 / 17 ファイル**が監査対象（`audit/SCOPE.md`）。
 
 ---
 
@@ -17,15 +17,15 @@ ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で
 | 項目 | 値 |
 |---|---|
 | repo | `github.com/sin-sky/sixx-vault` |
-| **監査対象コード凍結（Round 6・第3レビュー remediation 形）** | **`2e8f059`**（H-02 totalAssets() revert 下でも常に退出可能＝read-failure fallback／M-02 mainnet governance=Timelock(≥48h) 強制／M-03 setAdapter で adapter の vault/asset/governance binding 検証／L-02 rescueToken が原資産を拒否／L-03 registry list 上限） |
-| 前 Round | `0703525`（Round 5・第2独立レビュー H-01/M-01/L-01/P-02/P-03） / `78aa8c1`（Round 4・独立 Handoff 監査 M-01〜M-05／L-01） / `173e3fb`（Round 3・Part B P1-P4） |
-| 本ハンドオフ束 | `2e8f059` 近傍 HEAD。zip 名の末尾 shorthash＝バンドル生成コミット |
+| **監査対象コード凍結（Round 7・内部 adversarial hardening 形）** | **`9fa9796`**（**F-1** M-02 の Timelock 強制を本番チェーン集合 `{Ethereum 1, Arbitrum One 42161, BNB 56}` に拡張＝deploy が本番配線する Arbitrum One/BNB の盲点を閉塞／**F-3** Ethena 部分 exit の dust は全清算せず revert／F-2 NAV×可変 slippage 裁定は運用緩和＝lockPeriod＋slippage 変更 pause。詳細＝`audit/ADVERSARIAL_HARDENING_2026-07-12.md`） |
+| 前 Round | `2e8f059`（Round 6・第3レビュー H-02/M-02/M-03/L-02/L-03） / `0703525`（Round 5・第2独立レビュー H-01/M-01/L-01/P-02/P-03） / `78aa8c1`（Round 4・独立 Handoff 監査 M-01〜M-05／L-01） / `173e3fb`（Round 3・Part B P1-P4） |
+| 本ハンドオフ束 | `9fa9796` 近傍 HEAD。zip 名の末尾 shorthash＝バンドル生成コミット |
 | solc | **0.8.28** |
 | Foundry | forge **1.7.1** |
 | OpenZeppelin | **v5.6.1**（`lib/openzeppelin-contracts`） |
 | forge-std | **v1.16.1**（`lib/forge-std`） |
 
-> 以降の変更は監査ベンダーと合意の上で。本ハンドオフ zip は凍結 `2e8f059` の内容を同梱。
+> 以降の変更は監査ベンダーと合意の上で。本ハンドオフ zip は凍結 `9fa9796` の内容を同梱。
 
 ---
 
@@ -44,7 +44,7 @@ export FOUNDRY_EVM_VERSION=cancun
 
 # 3) ビルド & 非フォークテスト（RPC 不要）
 forge build
-forge test --no-match-contract Fork          # 131 pass 想定（invariant 5 含む）
+forge test --no-match-contract Fork          # 272 pass 想定（invariant/fuzz 含む）
 
 # 4) ワンコマンド決定論監査（推奨・静的解析＋不変条件＋Echidna＋差分ゲート）
 ./scripts/contract-audit.sh                    # OVERALL PASS を確認

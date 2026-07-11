@@ -1,27 +1,27 @@
 # SIXX Vault — 監査スコープ（SCOPE）
 
-> 外部監査／専門レビュー用。**凍結コミット `2e8f059`**（`main`・Round 6＝第3レビュー H-02／M-02／M-03／L-02／L-03 remediation 反映済）。solc 0.8.28。
-> （履歴：Round 3 `173e3fb`（Part B P1-P4）→ Round 4 `78aa8c1`（独立 Handoff 監査 M-01〜M-05／L-01）→ Round 5 `0703525`（第2独立レビュー H-01／M-01／L-01／P-02／P-03）→ 本 Round 6 `2e8f059`（第3レビュー：H-02 totalAssets-revert 下でも常に退出可能／M-02 mainnet governance=Timelock 強制／M-03 setAdapter binding 検証／L-02 rescueToken 原資産拒否／L-03 registry list 上限）。詳細＝`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
+> 外部監査／専門レビュー用。**凍結コミット `9fa9796`**（`main`・Round 7＝自発 adversarial hardening F-1／F-3 反映済）。solc 0.8.28。
+> （履歴：Round 3 `173e3fb`（Part B P1-P4）→ Round 4 `78aa8c1`（独立 Handoff 監査 M-01〜M-05／L-01）→ Round 5 `0703525`（第2独立レビュー H-01／M-01／L-01／P-02／P-03）→ Round 6 `2e8f059`（第3レビュー：H-02 totalAssets-revert 下でも常に退出可能／M-02 mainnet governance=Timelock 強制／M-03 setAdapter binding 検証／L-02 rescueToken 原資産拒否／L-03 registry list 上限）→ 本 Round 7 `9fa9796`（内部 adversarial：**F-1** M-02 Timelock 強制を本番チェーン集合 `{1,42161,56}` に拡張＝Arbitrum One/BNB の盲点を閉塞／**F-3** Ethena dust withdraw が全清算せず revert／F-2 は運用緩和で対応＝lockPeriod＋slippage 変更 pause）。詳細＝`audit/ADVERSARIAL_HARDENING_2026-07-12.md`／`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
 > 補完文書：入口＝`audit/README_FOR_REVIEWER.md`／既知FP＝`audit/SLITHER_TRIAGE.md`＋`audit/ADERYN_TRIAGE.md`＋`AUDIT_PACKAGE.md §Slither`／等価変異＝`audit/MUTATION_TRIAGE.md`／自前ハードニング＝`PRE_AUDIT_HARDENING.md`。
 
 ---
 
 ## 1. In-Scope（自前 Solidity＝監査対象）
 
-実測 LoC（`2e8f059`・`wc -l`）。**合計 3,112 行 / 17 ファイル**（Round 5 比 +88 / +1 file：SIXXVault +55・AdapterRegistry +21・各 adapter +1×3・新規 `ITimelockMinDelay`(11)＝第3レビュー H-02/M-02/M-03/L-02/L-03 remediation）。
+実測 LoC（`9fa9796`・`wc -l`）。**合計 3,156 行 / 17 ファイル**（Round 6 `2e8f059` 比 +44 / ±0 file：SIXXVault +14・AdapterRegistry +12（F-1 `_isProductionChain`）・EthenaSUSDeAdapter +13（F-3 dust guard＋コメント）・VenusUSDTAdapter +5（コメント精度））。
 
 ### 1.1 コア（会計・ガバナンス）
 | ファイル | LoC | 役割 |
 |---|---:|---|
-| `src/core/SIXXVault.sol` | 676 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03/H-01)・**totalAssets() revert 耐性(H-02)**・setAdapter binding 検証(M-03)・mainnet gov=Timelock 強制(M-02) |
-| `src/core/AdapterRegistry.sol` | 143 | ガバナンス whitelist（`isActive`/`registerAdapter`）・list 上限(L-03)・mainnet gov=Timelock 強制(M-02) |
+| `src/core/SIXXVault.sol` | 690 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03/H-01)・**totalAssets() revert 耐性(H-02)**・setAdapter binding 検証(M-03)・本番チェーン集合で gov=Timelock 強制(M-02/**F-1** `_isProductionChain`) |
+| `src/core/AdapterRegistry.sol` | 155 | ガバナンス whitelist（`isActive`/`registerAdapter`）・list 上限(L-03)・本番チェーン集合で gov=Timelock 強制(M-02/**F-1**) |
 
 ### 1.2 アダプター（各外部プロトコル連携）
 | ファイル | LoC | 連携先（外部＝out-of-scope 本体） |
 |---|---:|---|
-| `src/adapters/AaveV3USDCAdapter.sol` | 277 | Aave V3 Pool（USDC・Arbitrum） |
-| `src/adapters/VenusUSDTAdapter.sol` | 288 | Venus vToken（USDT・BNB） |
-| `src/adapters/EthenaSUSDeAdapter.sol` | 431 | Ethena `StakedUSDeV2` ＋ Curve StableSwap-NG（USDC↔USDe↔sUSDe↔crvUSD） |
+| `src/adapters/AaveV3USDCAdapter.sol` | 278 | Aave V3 Pool（USDC・Arbitrum） |
+| `src/adapters/VenusUSDTAdapter.sol` | 294 | Venus vToken（USDT・BNB） |
+| `src/adapters/EthenaSUSDeAdapter.sol` | 462 | Ethena `StakedUSDeV2` ＋ Curve StableSwap-NG（USDC↔USDe↔sUSDe↔crvUSD）。部分 exit の dust は revert(**F-3**)・NAV×可変 slippage 裁定は運用緩和(F-2) |
 | `src/adapters/PendlePTAdapter.sol` | 604 | Pendle Router V4 ＋ 注入 `IStableSwapper`（USDC↔USDe / sUSDe→USDC）。deposit/withdraw は実残高デルタ検算（M-04/M-05）。swapper は swap 毎 exact-approve→0（M-01：無期限 allowance 廃止） |
 
 ### 1.3 インターフェース（自前宣言）

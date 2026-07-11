@@ -98,9 +98,11 @@ contract PendlePTAdapterForkTest is Test {
         uint256 twap = IPPtOracle(PTORACLE).getPtToAssetRate(MARKET, TWAP);
         assertLt(twap, 1e18, "PT TWAP should be a discount pre-maturity");
         uint256 rate = twap > 1e18 ? 1e18 : twap;
-        uint256 expected = (ptBal * rate / 1e18) / 1e12; // USDe(18) -> USDC(6), truncated
+        // TWAP-capped USDe mark, recall-haircut applied, then USDe(18) -> USDC(6).
+        uint256 usdeVal = ptBal * rate / 1e18;
+        uint256 expected = (usdeVal * (10_000 - adapter.recallHaircutBps())) / 10_000 / 1e12;
 
-        assertEq(adapter.totalAssets(), expected, "totalAssets != TWAP-capped mark");
+        assertEq(adapter.totalAssets(), expected, "totalAssets != haircut TWAP-capped mark");
     }
 
     // ─────────────────────────────────────────────────────────
@@ -111,14 +113,17 @@ contract PendlePTAdapterForkTest is Test {
         _deposit(DEPOSIT);
         skip(3 days);
 
-        uint256 ta = adapter.totalAssets();
+        uint256 ta = adapter.totalAssets(); // haircut NAV
         uint256 got = adapter.withdraw(type(uint256).max, user);
 
         assertEq(IERC20(USDC).balanceOf(user), got, "recipient mismatch");
         assertApproxEqRel(IERC20(PT).balanceOf(address(adapter)), 0, 1e15, "PT not drained");
-        // Early exit realizes near the mark, minus AMM + 2 stable legs slippage.
-        assertGt(got, (ta * 98) / 100, "early exit realized too little");
-        assertLe(got, ta + 1, "early exit realized above mark");
+        // escalate#1 core: a completing full exit realizes >= the reported (haircut)
+        // NAV, so the vault's `received >= toWithdraw` guard holds.
+        assertGe(got, ta, "full exit realized below reported NAV (guard would revert)");
+        // Realized can't exceed the un-haircut TWAP mark by more than dust.
+        uint256 rawMark = (ta * 10_000) / (10_000 - adapter.recallHaircutBps());
+        assertLe(got, rawMark + 1, "early exit realized above un-haircut mark");
     }
 
     function test_PreMaturity_PartialExit() public {
@@ -143,10 +148,11 @@ contract PendlePTAdapterForkTest is Test {
         // Jump to just after maturity.
         vm.warp(EXPIRY + 1);
 
-        // Post-maturity mark == par (rate 1e18), so totalAssets ~= PT notional.
+        // Post-maturity mark == par (rate 1e18), recall-haircut applied.
         uint256 ptBal = IERC20(PT).balanceOf(address(adapter));
         uint256 taPar = adapter.totalAssets();
-        assertApproxEqAbs(taPar, ptBal / 1e12, 1, "par mark mismatch");
+        uint256 expectedPar = (ptBal * (10_000 - adapter.recallHaircutBps())) / 10_000 / 1e12;
+        assertApproxEqAbs(taPar, expectedPar, 1, "par (haircut) mark mismatch");
 
         uint256 got = adapter.withdraw(type(uint256).max, user);
         assertEq(IERC20(USDC).balanceOf(user), got, "recipient mismatch");

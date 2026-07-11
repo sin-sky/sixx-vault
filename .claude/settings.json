@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-dangerous.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "Read",
+      "MultiEdit"
+    ],
+    "deny": [
+      "Bash(cast send:*)",
+      "Bash(forge script:* --broadcast*)"
+    ]
+  }
+}

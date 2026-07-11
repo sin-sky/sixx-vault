@@ -25,3 +25,8 @@ handoff/
 
 # OS
 .DS_Store
+
+# Claude Code local-only settings (bypassPermissions) — never commit
+.claude/settings.local.json
+.claude/hooks/notify.log
+.claude/scheduled_tasks.lock

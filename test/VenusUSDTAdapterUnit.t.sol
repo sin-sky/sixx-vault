@@ -66,6 +66,13 @@ contract VenusUSDTAdapterUnitTest is Test {
         adapter.rescueToken(address(vusdt), recipient);
     }
 
+    /// L-02 (3rd review): the underlying (USDT principal) must be un-rescuable, like Pendle.
+    function test_L02_rescue_cannot_take_underlying() public {
+        vm.prank(governance);
+        vm.expectRevert("ADAPTER: cannot rescue principal");
+        adapter.rescueToken(address(usdt), recipient);
+    }
+
     function test_rescue_only_governance() public {
         vm.prank(stranger);
         vm.expectRevert("ADAPTER: not governance");

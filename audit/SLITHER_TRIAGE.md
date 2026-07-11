@@ -103,3 +103,27 @@ incorrect-equality（`supply==0` 等の制御 guard）／vault→adapter `withdr
 `deposit`/`withdraw`（`nonReentrant`）配下＝新規 reentrancy-eth 等を生まない。
 
 → baseline（`audit/slither-baseline.json`）を `--update-slither-baseline` で再凍結。実問題ゼロ。
+
+## 追補（2026-07-12・第3レビュー H-02/M-02/M-03/L-02/L-03 remediation 後）
+
+第3レビュー remediation を反映：
+- **H-02**：`totalAssets()` を try/catch 化（adapter read 失敗時 `_totalDebt` fallback＝revert しない）／
+  `_recallFromAdapter` の `available` 読取を try/catch＋best-effort `needed` fallback。
+- **M-02**：`SIXXVault`/`AdapterRegistry` の `proposeGovernance` に mainnet（chainid==1）Timelock 強制
+  （`code.length>0`＋`ITimelockMinDelay.getMinDelay()>=48h`、try/catch）。
+- **M-03**：`setAdapter` に `asset()==asset()`・`vault()==this`・`governance()==governance`（best-effort）検証。
+- **L-02**：Aave/Venus/Ethena の `rescueToken` に `token != asset` 追加。
+- **L-03**：`AdapterRegistry` に `MAX_ADAPTERS=100` cap（`registerAdapter`）。
+
+`(検出器, 関数)` 差分の "新規" 20 件はすべて**行シフト id ずれ＋既存 FP クラスの同型インスタンス**。
+危険検出器（arbitrary-send / suicidal / controlled-delegatecall / **reentrancy-eth** / unprotected-upgrade /
+weak-prng / tx-origin）は **0 件**。逐条：
+
+| 新規箇所 | 検出器 | 判定 | 理由 |
+|---|---|---|---|
+| `totalAssets`／`_recallFromAdapter` の adapter try/catch 読取 | reentrancy-balance / uninitialized-local | 偽陽性 | H-02 の revert 耐性化。`totalAssets` は `view`、`_recallFromAdapter` は `withdraw`（`nonReentrant`）配下。try 変数の zero-init は正（既存 `navReadOk`/`marked` と同型）。 |
+| `setAdapter` の binding 検証（`asset()`/`vault()`/`governance()` 外部呼） | reentrancy-no-eth / unused-return / incorrect-equality | 意図的/受容 | M-03。`onlyGovernance`＋`nonReentrant` 配下・view staticcall。`==` は binding 一致判定（値操作で破れる等価でない）。 |
+| `proposeGovernance` の `getMinDelay()` 外部呼（vault/registry） | reentrancy-no-eth / unused-return | 受容 | M-02。`onlyGovernance`・mainnet のみ・view staticcall。戻り値は `require(d>=48h)` で使用（unused ではない箇所も id ずれ）。 |
+| `_collectFees`／Pendle 系の incorrect-equality・divide-before-multiply・unused-return | — | 意図的 | 既存トリアージと同一（M-1 希釈式・制御 guard・balance-delta）。行シフト id ずれ。 |
+
+→ baseline を `--update-slither-baseline` で再凍結。実問題ゼロ。

@@ -281,6 +281,7 @@ contract VenusUSDTAdapter is IStrategyAdapter, ReentrancyGuard {
         require(msg.sender == governance, "ADAPTER: not governance");
         require(to != address(0), "ADAPTER: zero recipient");
         require(token != address(vToken), "ADAPTER: cannot rescue position");
+        require(token != asset, "ADAPTER: cannot rescue principal"); // L-02: underlying protected
         amount = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransfer(to, amount);
         emit TokenRescued(token, to, amount);

@@ -10,6 +10,16 @@ import {ISIXXVault} from "../interfaces/ISIXXVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IStrategyAdapter} from "../interfaces/IStrategyAdapter.sol";
 import {IAdapterRegistry} from "../interfaces/IAdapterRegistry.sol";
+import {ITimelockMinDelay} from "../interfaces/ITimelockMinDelay.sol";
+
+/// @dev M-03 (3rd review): the binding getters every SIXX adapter exposes, used by
+///      setAdapter to verify an incoming adapter points back at THIS vault and shares the
+///      vault's governance before it is activated. Kept separate from IStrategyAdapter so
+///      the check can be best-effort for governance() (test mocks may omit it).
+interface IAdapterBindings {
+    function vault() external view returns (address);
+    function governance() external view returns (address);
+}
 
 /// @title SIXXVault
 /// @notice ERC-4626 compliant tokenized vault with pluggable yield strategy adapters.
@@ -152,9 +162,20 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     /// @dev ADR-007 #2: subtract the unreleased portion of the last harvest so a
     ///      just-in-time depositor cannot mint against yield that has not yet vested.
     function totalAssets() public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 adapterAssets = activeAdapter != address(0)
-            ? IStrategyAdapter(activeAdapter).totalAssets()
-            : 0;
+        // H-02 (3rd review): totalAssets() MUST NOT revert. ERC-4626 withdraw/redeem
+        //   conversion, previews, and _collectFees all read it — a reverting adapter
+        //   valuation (broken oracle / not-ready TWAP) would otherwise brick every exit.
+        //   On read failure, degrade to the last booked debt (_totalDebt) so reads stay
+        //   live and users can always exit against whatever the adapter can realize; the
+        //   _recallFromAdapter shortfall guard still protects accounting on the actual pull.
+        uint256 adapterAssets;
+        if (activeAdapter != address(0)) {
+            try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 a) {
+                adapterAssets = a;
+            } catch {
+                adapterAssets = _totalDebt;
+            }
+        }
         uint256 raw = IERC20(asset()).balanceOf(address(this)) + adapterAssets;
         uint256 lp = lockedProfit();
         return raw > lp ? raw - lp : 0;
@@ -331,8 +352,17 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         if (activeAdapter == address(0)) return;
 
         uint256 needed = assets - idle;
-        uint256 available = IStrategyAdapter(activeAdapter).totalAssets();
-        uint256 toWithdraw = needed > available ? available : needed;
+        // H-02 (3rd review): don't let a reverting totalAssets() brick the exit. If the
+        //   mark reads, cap the pull at the marked available (avoid over-requesting); if it
+        //   reverts, fall back to a best-effort pull of exactly `needed` — the adapter's own
+        //   withdraw enforces its real capacity and the received>=toWithdraw guard below
+        //   still protects accounting. Read-failure is never a reason to freeze withdrawals.
+        uint256 toWithdraw = needed;
+        try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 available) {
+            if (needed > available) toWithdraw = available;
+        } catch {
+            // mark unreadable → attempt the full `needed` best-effort
+        }
         if (toWithdraw == 0) return;
 
         // M13-16: don't trust the adapter's return value blindly — measure the actual
@@ -361,6 +391,18 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
                 IAdapterRegistry(adapterRegistry).isActive(newAdapter),
                 "VAULT: adapter not whitelisted"
             );
+        }
+
+        // M-03 (3rd review): verify the incoming adapter is bound to THIS vault and the same
+        //   asset before activating it — a misconfigured/foreign adapter must not be wired in.
+        //   governance() is best-effort: adapters that expose it must share the vault's
+        //   governance (the Timelock); test mocks that omit it are skipped.
+        if (newAdapter != address(0)) {
+            require(IStrategyAdapter(newAdapter).asset() == asset(), "VAULT: adapter asset mismatch");
+            require(IAdapterBindings(newAdapter).vault() == address(this), "VAULT: adapter vault mismatch");
+            try IAdapterBindings(newAdapter).governance() returns (address g) {
+                require(g == governance, "VAULT: adapter governance mismatch");
+            } catch {}
         }
 
         // Recall everything from current adapter
@@ -575,6 +617,19 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
     function proposeGovernance(address newGovernance) external override onlyGovernance {
         require(newGovernance != address(0), "VAULT: zero address");
+        // M-02 (3rd review): on Ethereum mainnet, governance MUST be a TimelockController
+        //   with >= 48h delay — never a hot EOA. Off-mainnet (testnets/local) keeps EOA
+        //   governance for iteration. Complements the mainnet-gate G1 manual check.
+        if (block.chainid == 1) {
+            // Must be a contract first (an EOA staticcall returns empty data, which would
+            // fail to decode BEFORE reaching the catch), then a Timelock with >= 48h delay.
+            require(newGovernance.code.length > 0, "VAULT: mainnet gov must be a Timelock");
+            try ITimelockMinDelay(newGovernance).getMinDelay() returns (uint256 d) {
+                require(d >= 48 hours, "VAULT: mainnet gov timelock < 48h");
+            } catch {
+                revert("VAULT: mainnet gov must be a Timelock");
+            }
+        }
         pendingGovernance = newGovernance;
         emit GovernanceProposed(governance, newGovernance);
     }

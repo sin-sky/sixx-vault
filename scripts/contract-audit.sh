@@ -59,6 +59,12 @@ ECHIDNA_LIMIT="${ECHIDNA_LIMIT:-50000}"
 #   gate tolerates (see audit/ADERYN_TRIAGE.md). Anything above these counts fails the build.
 ADERYN_HIGH_BASELINE="${ADERYN_HIGH_BASELINE:-1}"
 ADERYN_MED_BASELINE="${ADERYN_MED_BASELINE:-0}"
+# P-02 (3rd review): aderyn 0.6.8 is validated exit=0 in the reference toolchain, but is
+#   known to panic (exit=101) on some platforms/inputs. Default = crash is a hard FAIL (a
+#   crashed run is NEVER a clean pass). Set ADERYN_ADVISORY=1 in an environment where aderyn
+#   is known-flaky to downgrade a crash to a loud WARN (manual review; Slither stays the
+#   PRIMARY, authoritative static-analysis gate).
+ADERYN_ADVISORY="${ADERYN_ADVISORY:-0}"
 MUTATION_TARGET="${MUTATION_TARGET:-src/core/SIXXVault.sol}"
 if [ "$QUICK" = "1" ]; then ECHIDNA_LIMIT=5000; fi
 
@@ -89,9 +95,13 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "MISSING TOOL: $1"; return 1;
 # ─── Result tracking ──────────────────────────────────────────
 declare -a RESULTS
 FAILED=0
+WARNED=0
 record() { # name status detail
   RESULTS+=("$1|$2|$3")
   [ "$2" = "FAIL" ] && FAILED=1
+  # P-02 (3rd review): a WARN must not read as a clean pass — track it so the OVERALL
+  #   line surfaces "PASS WITH WARNINGS (manual review)" rather than a bare "PASS ✅".
+  [ "$2" = "WARN" ] && WARNED=1
   printf '  → %s: %s %s\n' "$1" "$2" "$3"
 }
 banner() { echo; echo "════════════════════════════════════════════"; echo "▶ $1"; echo "════════════════════════════════════════════"; }
@@ -234,17 +244,27 @@ PY
   #   High-1 (reentrancy) is confirmed a false positive against Slither (no reentrancy-eth;
   #   see audit/ADERYN_TRIAGE.md §cross-check).
   #
-  #   Crash-safety guarantee (SHIN 2nd review): a PASS is emitted ONLY when ALL of
+  #   Crash-safety guarantee (SHIN 2nd/3rd review): a PASS is emitted ONLY when ALL of
   #   (a) a report file exists, (b) it contains a parseable "Issue Summary" table,
   #   (c) High/Med are within the triaged baseline, AND (d) aderyn exited 0. A crashed /
-  #   incomplete run therefore can only ever yield FAIL or WARN — its High/Med counts are
-  #   NEVER a PASS basis. Validated working version: aderyn 0.6.8 (deterministic exit=0).
+  #   incomplete run (no report / no summary / exit!=0) is a hard FAIL by default — NEVER a
+  #   clean pass — and its High/Med counts are never a PASS basis. ADERYN_ADVISORY=1
+  #   downgrades a crash to a WARN that still flags MANUAL REVIEW and surfaces "PASS WITH
+  #   WARNINGS" in the summary (for environments where aderyn 0.6.8 panics, exit=101).
+  #   Validated working version: aderyn 0.6.8 (deterministic exit=0 in the reference toolchain).
   banner "Stage 7 — aderyn (secondary High/Medium gate vs triaged baseline)"
   if need aderyn; then
     aderyn . -o "$REPORTS/aderyn-report.md" > "$REPORTS/aderyn.log" 2>&1
     arc=$?
+    # P-02 (3rd review): a crash/incomplete run is a hard FAIL by default (never a clean
+    #   pass); ADERYN_ADVISORY=1 downgrades it to a WARN that still flags MANUAL REVIEW.
+    if [ "$ADERYN_ADVISORY" = "1" ]; then
+      crash_status="WARN"; crash_note="ADVISORY — MANUAL REVIEW required; Slither is authoritative"
+    else
+      crash_status="FAIL"; crash_note="crash blocks the build; set ADERYN_ADVISORY=1 to downgrade to manual-review"
+    fi
     if [ ! -f "$REPORTS/aderyn-report.md" ]; then
-      record "aderyn" "FAIL" "(no report — aderyn exit=$arc, likely crashed; see reports/aderyn.log)"
+      record "aderyn" "$crash_status" "(no report — aderyn exit=$arc, crashed; $crash_note)"
     else
       # Machine-judge: the parser emits "FOUND h m" only if a real Issue Summary table
       # was present; "MISSING 0 0" means the report is malformed/incomplete (e.g. a run
@@ -273,11 +293,13 @@ PY
       detail="High=${AD_HIGH}(≤${ADERYN_HIGH_BASELINE}) Med=${AD_MED}(≤${ADERYN_MED_BASELINE}) exit=${arc}"
       if [ "$ad_found" != "FOUND" ]; then
         # Report present but no parseable Issue Summary — incomplete/crashed run.
-        record "aderyn" "FAIL" "(report has no Issue Summary — incomplete/crashed run; not a PASS basis; exit=$arc)"
+        record "aderyn" "$crash_status" "(report has no Issue Summary — incomplete/crashed run; exit=$arc; $crash_note)"
       elif [ "$AD_HIGH" -gt "$ADERYN_HIGH_BASELINE" ] || [ "$AD_MED" -gt "$ADERYN_MED_BASELINE" ]; then
         record "aderyn" "FAIL" "(NEW High/Medium beyond triaged baseline — $detail; see audit/ADERYN_TRIAGE.md)"
       elif [ "$arc" -ne 0 ]; then
-        record "aderyn" "WARN" "(aderyn exit=$arc but report parsed — $detail; Slither is the primary gate)"
+        # Parsed a clean report but aderyn still exited non-zero (e.g. exit=101 panic on
+        # teardown) — NOT a clean pass. FAIL by default; WARN + manual-review in advisory mode.
+        record "aderyn" "$crash_status" "(aderyn exit=$arc — crashed despite a parseable report; $detail; $crash_note)"
       else
         record "aderyn" "PASS" "no new High/Medium vs triaged baseline ($detail)"
       fi
@@ -344,7 +366,15 @@ banner "SUMMARY"
     echo "| $n | $s | $d |"
   done
   echo
-  if [ "$FAILED" = "0" ]; then echo "**OVERALL: PASS ✅**"; else echo "**OVERALL: FAIL ❌**"; fi
+  # P-02 (3rd review): a WARN (e.g. an advisory aderyn crash) must NOT read as a clean
+  #   pass — surface it distinctly so a crashed run is never a silent "green".
+  if [ "$FAILED" != "0" ]; then
+    echo "**OVERALL: FAIL ❌**"
+  elif [ "$WARNED" != "0" ]; then
+    echo "**OVERALL: PASS WITH WARNINGS ⚠️ — manual review required (see WARN rows)**"
+  else
+    echo "**OVERALL: PASS ✅**"
+  fi
 } | tee "$SUMMARY"
 
 echo

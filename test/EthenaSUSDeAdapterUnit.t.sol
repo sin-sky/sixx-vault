@@ -407,6 +407,13 @@ contract EthenaSUSDeAdapterUnitTest is Test {
         adapter.rescueToken(address(susde), recipient);
     }
 
+    /// L-02 (3rd review): the underlying (USDC principal) must be un-rescuable, like Pendle.
+    function test_L02_rescue_cannot_take_underlying() public {
+        vm.prank(governance);
+        vm.expectRevert("ADAPTER: cannot rescue principal");
+        adapter.rescueToken(address(usdc), recipient);
+    }
+
     function test_rescue_onlyGovernance() public {
         vm.prank(stranger);
         vm.expectRevert("ADAPTER: not governance");

@@ -15,6 +15,10 @@
 ## G1. ガバナンス・ハードニング（Part B P5・AC4 — **必須**）
 
 - [ ] `governance` = **TimelockController(48h)**（単一 EOA 禁止）。deploy script は EOA gov で revert する設計（C-1）だが、**実アドレスが Timelock であることを明示確認**。
+  - **M-02（第3レビュー・オンチェーン強制済）**：`SIXXVault`/`AdapterRegistry` の `proposeGovernance` は
+    mainnet（`chainid==1`）で **`code.length>0` かつ `ITimelockMinDelay.getMinDelay() >= 48h`** を要求し、
+    EOA / 48h 未満 Timelock を revert する。本チェックリストは初期 governance（constructor 配線）と
+    ローテ先の**実体が正しい Timelock か**の目視確認を担う（オンチェーン強制はローテ経路をカバー）。
 - [ ] `guardian` = 各チェーン **2-of-3 Gnosis Safe**（`setEmergencyShutdown` の即時 pause 権限）。
 - [ ] `feeRecipient` = 承認済 treasury（EOA でないこと推奨）。
 - [ ] **AdapterRegistry の `governance` も Timelock 配下**（`registerAdapter` / `setAdapterStatus` が自動的に 48h 遅延を受ける）。

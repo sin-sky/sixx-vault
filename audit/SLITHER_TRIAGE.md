@@ -127,3 +127,27 @@ weak-prng / tx-origin）は **0 件**。逐条：
 | `_collectFees`／Pendle 系の incorrect-equality・divide-before-multiply・unused-return | — | 意図的 | 既存トリアージと同一（M-1 希釈式・制御 guard・balance-delta）。行シフト id ずれ。 |
 
 → baseline を `--update-slither-baseline` で再凍結。実問題ゼロ。
+
+---
+
+## Round 7（`9fa9796`／内部 adversarial hardening F-1・F-3）
+
+自発 adversarial パスの修正（`audit/ADVERSARIAL_HARDENING_2026-07-12.md`）：
+- **F-1**：`SIXXVault`/`AdapterRegistry` の `proposeGovernance` の mainnet Timelock 強制を
+  `chainid==1` → `_isProductionChain()`（`{1, 42161, 56}`）に拡張。
+- **F-3**：`EthenaSUSDeAdapter.withdraw` の部分 exit ダストを全清算せず `require(sharesToSell>0, "dust")` で revert。
+- コメント精度（Venus staleness／Ethena depeg scope）。
+
+slither 差分の "新規" **7 件**はすべて**行シフト id ずれ＋既存 FP クラスの同型インスタンス**（F-3 と
+コメント編集で Venus/Ethena の行番号が動き、slither の content-hash `id` が変化しただけ）。危険検出器
+（arbitrary-send / suicidal / controlled-delegatecall / reentrancy-eth / unprotected-upgrade / weak-prng /
+tx-origin）は **0 件**。逐条：
+
+| 新規箇所 | 検出器 | 判定 | 理由 |
+|---|---|---|---|
+| `VenusUSDTAdapter.withdraw` | reentrancy-balance | 偽陽性 | 既存トリアージ済（本表冒頭）。`onlyVault`＋`nonReentrant`、`withdrawn` は呼出後の実残高デルタ。コード不変・staleness コメント追記で行シフトのみ。 |
+| `VenusUSDTAdapter.withdraw` | incorrect-equality | 受容 | `redeem/mint/redeemUnderlying == 0` の error-code guard。コード不変。 |
+| `EthenaSUSDeAdapter.totalAssets` | incorrect-equality | 意図的 | `shares == 0` guard。コメント編集で行シフトのみ。 |
+| `EthenaSUSDeAdapter.deposit`／`withdraw` の Curve `exchange()`・`susde.deposit()`（4 件） | unused-return | 意図的 | M-04。戻り値を信用せず実残高デルタで検算・`min_out` で保護。F-3 修正で行シフトのみ（`exchange` 呼自体は不変）。 |
+
+→ baseline を再凍結（`audit/slither-baseline.json` 更新）。実問題ゼロ。

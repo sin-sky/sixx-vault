@@ -185,24 +185,38 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
 
         slippageBps = 50; // 0.5% default (matches Part A)
 
-        _initApprovals(asset_, r.susde, r.usde, r.pt, swapper_, pendleRouter_);
+        _initApprovals(r.usde, r.pt, pendleRouter_);
     }
 
-    /// @dev Grant the standing approvals in a separate frame (constructor stack).
-    ///      swapper pulls USDC (deposit) + sUSDe (withdraw); router pulls USDe
-    ///      (buy PT) + PT (sell / redeem PT).
+    /// @dev Grant the standing router approvals in a separate frame (constructor stack).
+    ///      The router pulls USDe (buy PT) + PT (sell / redeem PT); it is the immutable,
+    ///      trusted Pendle protocol contract.
+    ///      M-01 (2nd review): the swapper is DELIBERATELY not granted a standing
+    ///      allowance here. Each swap scope-approves exactly what it needs and resets
+    ///      the allowance to 0 (see `_swapVia`), so a later-compromised/misconfigured
+    ///      swapper can never pull idle USDC/sUSDe that transits the adapter.
     function _initApprovals(
-        address asset_,
-        address susde_,
         address usde_,
         address pt_,
-        address swapper_,
         address router_
     ) private {
-        IERC20(asset_).forceApprove(swapper_, type(uint256).max);
-        IERC20(susde_).forceApprove(swapper_, type(uint256).max);
         IERC20(usde_).forceApprove(router_, type(uint256).max);
         IERC20(pt_).forceApprove(router_, type(uint256).max);
+    }
+
+    /// @dev M-01 (2nd review): run a swapper leg under a single-use, exact-amount
+    ///      allowance — approve exactly `amountIn`, execute the swap, then reset the
+    ///      allowance to 0 unconditionally (covers a swapper that pulls less than
+    ///      approved). The swapper thus never holds a standing allowance. The return
+    ///      value is intentionally ignored by callers, which re-derive the received
+    ///      amount from a balance delta (M-04); this helper preserves that guard.
+    function _swapVia(address tokenIn, address tokenOut, uint256 amountIn, uint256 minOut)
+        internal
+        returns (uint256 amountOut)
+    {
+        IERC20(tokenIn).forceApprove(address(swapper), amountIn);
+        amountOut = swapper.swap(tokenIn, tokenOut, amountIn, minOut, address(this));
+        IERC20(tokenIn).forceApprove(address(swapper), 0);
     }
 
     /// @dev Reads Pendle's token set from the market, cross-checks PT<->SY<->YT and
@@ -277,7 +291,7 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         //   would build a position smaller than the shares the vault already minted.
         uint256 usdeMin = _applySlip(_usdcToUsde(assets));
         uint256 usdeBefore = IERC20(usde).balanceOf(address(this));
-        swapper.swap(asset, usde, assets, usdeMin, address(this));
+        _swapVia(asset, usde, assets, usdeMin); // M-01: scoped, single-use approval
         uint256 usdeIn = IERC20(usde).balanceOf(address(this)) - usdeBefore;
         require(usdeIn >= usdeMin, "ADAPTER: swap shortfall");
 
@@ -377,7 +391,7 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
 
         // Leg 2: sUSDe -> USDC.
         uint256 usdcMin = _applySlip(_usdeToUsdc(_susdeToUsde(susdeOut)));
-        swapper.swap(susde, asset, susdeOut, usdcMin, address(this));
+        _swapVia(susde, asset, susdeOut, usdcMin); // M-01: scoped, single-use approval
 
         // Deliver: full exit forwards everything realized; partial caps at `assets`
         // and leaves any surplus idle for the next call.
@@ -529,16 +543,16 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
     }
 
     /// @notice Swap out the injected stablecoin swapper (e.g. re-route Curve pools).
+    /// @dev M-01 (2nd review): no standing allowances are granted to the new swapper —
+    ///      each swap scope-approves per call (see `_swapVia`). Any residual allowance to
+    ///      the old swapper is defensively zeroed (normally already 0 after every swap).
     function setSwapper(address newSwapper) external {
         require(msg.sender == governance, "ADAPTER: not governance");
         require(newSwapper != address(0), "ADAPTER: zero swapper");
         address old = address(swapper);
-        // Revoke the old approvals, grant to the new swapper.
         IERC20(asset).forceApprove(old, 0);
         IERC20(susde).forceApprove(old, 0);
         swapper = IStableSwapper(newSwapper);
-        IERC20(asset).forceApprove(newSwapper, type(uint256).max);
-        IERC20(susde).forceApprove(newSwapper, type(uint256).max);
         emit SwapperUpdated(old, newSwapper);
     }
 

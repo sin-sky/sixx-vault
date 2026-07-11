@@ -153,6 +153,49 @@ contract PendlePTAdapterAdversarialTest is Test {
     }
 
     // ─────────────────────────────────────────────────────────
+    // M-01 (2nd review): the swapper must never hold a STANDING allowance over
+    //   funds transiting the adapter. Each swap scope-approves exactly what it
+    //   needs and resets the allowance to 0, so a later-compromised/misconfigured
+    //   swapper cannot pull idle USDC/sUSDe outside an in-flight swap.
+    // ─────────────────────────────────────────────────────────
+
+    /// No standing swapper allowance is granted at construction, and none is left
+    /// after a deposit (USDC leg) or a withdraw (sUSDe leg).
+    function test_M01_noStandingSwapperAllowance() public {
+        // Construction grants no standing swapper allowance.
+        assertEq(
+            IERC20(address(usdc)).allowance(address(adapter), address(swapper)), 0,
+            "M-01: standing USDC swapper allowance at construction"
+        );
+        assertEq(
+            IERC20(address(susde)).allowance(address(adapter), address(swapper)), 0,
+            "M-01: standing sUSDe swapper allowance at construction"
+        );
+
+        // After the deposit swap (USDC->USDe) the USDC allowance is back to 0.
+        _deposit(DEPOSIT);
+        assertEq(
+            IERC20(address(usdc)).allowance(address(adapter), address(swapper)), 0,
+            "M-01: residual USDC swapper allowance after deposit"
+        );
+
+        // After a withdraw (sUSDe->USDC swap) the sUSDe allowance is back to 0.
+        adapter.withdraw(1_000e6, user);
+        assertEq(
+            IERC20(address(susde)).allowance(address(adapter), address(swapper)), 0,
+            "M-01: residual sUSDe swapper allowance after withdraw"
+        );
+    }
+
+    /// The scoped per-swap approval does not break a legitimate round trip — the
+    /// honest deposit/withdraw path still works with no standing allowance.
+    function test_M01_scopedApproval_roundTripStillWorks() public {
+        _deposit(DEPOSIT);
+        uint256 got = adapter.withdraw(1_000e6, user);
+        assertGe(got, 1_000e6, "M-01: scoped approval broke the withdraw round trip");
+    }
+
+    // ─────────────────────────────────────────────────────────
     // M-05: a partial exit crosses TWO slippage-bounded legs
     //       (PT->sUSDe, then sUSDe->USDC) and must STILL deliver >= request.
     // ─────────────────────────────────────────────────────────

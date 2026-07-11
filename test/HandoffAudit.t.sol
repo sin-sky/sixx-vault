@@ -164,10 +164,16 @@ contract HandoffAuditTest is Test {
         assertTrue(vault.depositsPaused(), "M-03: deposits not paused after writeoff");
         assertApproxEqAbs(vault.totalAssets(), 9_600 * USDC_6, 2, "totalAssets should equal honest raw");
 
-        // Deposits are blocked until governance reopens.
+        // Deposits are blocked until governance reopens. H-01: the pause now also
+        //   surfaces through maxDeposit()==0, so OZ v5 throws ERC4626ExceededMaxDeposit
+        //   before the vault's own "VAULT: deposits paused" check (same ordering as shutdown).
+        assertEq(vault.maxDeposit(bob), 0, "pause not reflected in maxDeposit");
         vm.startPrank(bob);
         usdc.approve(address(vault), 1_000 * USDC_6);
-        vm.expectRevert("VAULT: deposits paused");
+        vm.expectRevert(abi.encodeWithSelector(
+            bytes4(keccak256("ERC4626ExceededMaxDeposit(address,uint256,uint256)")),
+            bob, uint256(1_000 * USDC_6), uint256(0)
+        ));
         vault.deposit(1_000 * USDC_6, bob);
         vm.stopPrank();
 

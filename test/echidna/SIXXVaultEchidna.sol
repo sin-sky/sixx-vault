@@ -105,6 +105,21 @@ contract SIXXVaultEchidna {
         try adapter.harvest() {} catch {}
     }
 
+    /// @notice P-03: governance (this harness) toggles the management fee between 0 and a
+    ///         bounded rate. Fees mint shares, never assets, so the value-conservation
+    ///         properties below must still hold; a 0->nonzero change must not retroactively
+    ///         dilute (M-01 anchor advance).
+    function action_set_management_fee(uint256 bps) public {
+        bps = bps % 501; // 0..500 (<= MAX_MANAGEMENT_FEE)
+        try vault.setManagementFee(bps) {} catch {}
+    }
+
+    /// @notice P-03: permissionless vault.harvest() — a zero-profit harvest (MockAdapter has
+    ///         no discrete yield) must be a no-op on the unlock schedule (M-02).
+    function action_harvest_vault() public {
+        try vault.harvest() {} catch {}
+    }
+
     // ─────────────────────────────────────────────────────────
     // Properties (must always hold)
     // ─────────────────────────────────────────────────────────

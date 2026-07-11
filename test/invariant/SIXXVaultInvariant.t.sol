@@ -72,15 +72,18 @@ contract SIXXVaultInvariantTest is StdInvariant, Test {
         actors[1] = address(0xB0B);
         actors[2] = address(0xCAFE);
 
-        handler = new Handler(vault, IMintableERC20(address(usdc)), adapter, actors);
+        handler = new Handler(vault, IMintableERC20(address(usdc)), adapter, actors, governance);
 
         // Only fuzz the handler's action functions.
-        bytes4[] memory selectors = new bytes4[](5);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = Handler.deposit.selector;
         selectors[1] = Handler.withdraw.selector;
         selectors[2] = Handler.addYield.selector;
         selectors[3] = Handler.harvest.selector;
         selectors[4] = Handler.warp.selector;
+        // P-03: exercise the fee-toggle (M-01) and permissionless vault.harvest (M-02) paths.
+        selectors[5] = Handler.setManagementFee.selector;
+        selectors[6] = Handler.harvestVault.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
         targetContract(address(handler));
     }

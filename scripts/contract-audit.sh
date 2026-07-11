@@ -12,7 +12,7 @@
 #   4. invariant   — forge invariant suite (value non-creation / shares / non-custody / monotonicity)
 #   5. echidna     — property-based fuzzing (deep search)
 #   6. slither     — baseline-diff; fail on NEW High/Medium
-#   7. aderyn      — report generated; new findings flagged (soft gate unless ADERYN_STRICT=1)
+#   7. aderyn      — machine-judged High/Medium gate vs triaged baseline (hard); abnormal exit → WARN/FAIL
 #   8. mutation    — opt-in (--mutation); mutation score + surviving mutants (soft unless MUTATION_MIN set)
 #
 # Usage:
@@ -23,7 +23,8 @@
 #   ./scripts/contract-audit.sh --update-slither-baseline   # re-freeze slither allowlist after triage
 #
 # Tunables (env): COV_MIN (default 85), COV_TARGET (default src/core/SIXXVault.sol),
-#   ECHIDNA_LIMIT (default 50000), ADERYN_STRICT (0/1), MUTATION_MIN (unset=report only),
+#   ECHIDNA_LIMIT (default 50000), ADERYN_HIGH_BASELINE (default 1 — triaged FPs),
+#   ADERYN_MED_BASELINE (default 0), MUTATION_MIN (unset=report only),
 #   MUTATION_TARGET (default src/core/SIXXVault.sol).
 
 set -uo pipefail
@@ -54,7 +55,10 @@ done
 COV_MIN="${COV_MIN:-85}"
 COV_TARGET="${COV_TARGET:-src/core/SIXXVault.sol}"
 ECHIDNA_LIMIT="${ECHIDNA_LIMIT:-50000}"
-ADERYN_STRICT="${ADERYN_STRICT:-0}"
+# P-02: aderyn High/Medium baseline = count of KNOWN, triaged false positives that the
+#   gate tolerates (see audit/ADERYN_TRIAGE.md). Anything above these counts fails the build.
+ADERYN_HIGH_BASELINE="${ADERYN_HIGH_BASELINE:-1}"
+ADERYN_MED_BASELINE="${ADERYN_MED_BASELINE:-0}"
 MUTATION_TARGET="${MUTATION_TARGET:-src/core/SIXXVault.sol}"
 if [ "$QUICK" = "1" ]; then ECHIDNA_LIMIT=5000; fi
 
@@ -220,19 +224,49 @@ PY
     record "slither" "SKIP" "(slither not installed)"
   fi
 
-  # ─── Stage 7: aderyn (report + new-finding review) ──────────
-  banner "Stage 7 — aderyn (static analysis, review)"
+  # ─── Stage 7: aderyn (machine-judged High/Medium gate) ──────
+  # P-02 (2nd review): a real gate, not a soft "report generated". Aderyn's own
+  #   "Issue Summary" table is parsed for High/Medium counts and compared to a
+  #   TRIAGED baseline (known false positives, documented in audit/ADERYN_TRIAGE.md).
+  #   Any High/Medium ABOVE the baseline fails the build; an abnormal aderyn exit is
+  #   surfaced (FAIL if no report, WARN if a report was still produced) instead of
+  #   being swallowed by `|| true`.
+  banner "Stage 7 — aderyn (High/Medium gate vs triaged baseline)"
   if need aderyn; then
-    aderyn . -o "$REPORTS/aderyn-report.md" > "$REPORTS/aderyn.log" 2>&1 || true
-    if [ -f "$REPORTS/aderyn-report.md" ]; then
-      hi="$(grep -ciE 'high' "$REPORTS/aderyn-report.md" 2>/dev/null || echo 0)"
-      if [ "$ADERYN_STRICT" = "1" ] && grep -qiE '^#.*High' "$REPORTS/aderyn-report.md"; then
-        record "aderyn" "FAIL" "(High findings, ADERYN_STRICT=1)"
-      else
-        record "aderyn" "PASS" "report generated (review reports/aderyn-report.md)"
-      fi
+    aderyn . -o "$REPORTS/aderyn-report.md" > "$REPORTS/aderyn.log" 2>&1
+    arc=$?
+    if [ ! -f "$REPORTS/aderyn-report.md" ]; then
+      record "aderyn" "FAIL" "(no report — aderyn exit=$arc; see reports/aderyn.log)"
     else
-      record "aderyn" "WARN" "(no report — see reports/aderyn.log)"
+      # Machine-judge: extract High/Medium counts from the "Issue Summary" table.
+      ad_counts="$(python3 - "$REPORTS/aderyn-report.md" <<'PY'
+import sys, re
+high = med = 0
+in_summary = False
+for line in open(sys.argv[1], encoding='utf-8'):
+    s = line.strip().lower()
+    if s.startswith('## issue summary'):
+        in_summary = True; continue
+    if in_summary:
+        if line.startswith('#'):  # next top-level/section header → summary ended
+            break
+        m = re.match(r'\|\s*(high|medium)\s*\|\s*(\d+)\s*\|', s)
+        if m:
+            if m.group(1) == 'high': high = int(m.group(2))
+            else: med = int(m.group(2))
+print(high, med)
+PY
+)"
+      AD_HIGH="$(echo "$ad_counts" | awk '{print $1+0}')"
+      AD_MED="$(echo "$ad_counts" | awk '{print $2+0}')"
+      detail="High=${AD_HIGH}(≤${ADERYN_HIGH_BASELINE}) Med=${AD_MED}(≤${ADERYN_MED_BASELINE})"
+      if [ "$AD_HIGH" -gt "$ADERYN_HIGH_BASELINE" ] || [ "$AD_MED" -gt "$ADERYN_MED_BASELINE" ]; then
+        record "aderyn" "FAIL" "(NEW High/Medium beyond triaged baseline — $detail; see audit/ADERYN_TRIAGE.md)"
+      elif [ "$arc" -ne 0 ]; then
+        record "aderyn" "WARN" "(aderyn exit=$arc but report parsed — $detail)"
+      else
+        record "aderyn" "PASS" "no new High/Medium vs triaged baseline ($detail)"
+      fi
     fi
   else
     record "aderyn" "SKIP" "(aderyn not installed)"

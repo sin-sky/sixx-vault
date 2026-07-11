@@ -135,4 +135,9 @@ interface ISIXXVault is IERC4626 {
     /// @dev M-03: Emitted when the deposit pause is toggled. Set true by a lossy
     ///      force-detach (NAV writeoff); cleared by a healthy reattach or reopenDeposits().
     event DepositsPausedSet(bool paused);
+    /// @dev H-01: Emitted when the adapter's totalAssets() reverted during a force-detach,
+    ///      so the position could NOT be valued (marked == 0 is an unknown NAV, not a
+    ///      genuine zero). Deposits are paused as a result; governance must confirm the
+    ///      valuation has recovered before calling reopenDeposits().
+    event AdapterNavUnreadableOnDetach(address indexed adapter);
 }

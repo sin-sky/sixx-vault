@@ -199,12 +199,15 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // =========================================
 
     function maxDeposit(address) public view override(ERC4626, IERC4626) returns (uint256) {
-        if (emergencyShutdown) return 0;
+        // H-01: surface the post-force-detach deposit pause (impaired/unreadable NAV)
+        //   through the ERC-4626 view, matching the `_deposit` revert, so previews and
+        //   integrators see 0 capacity while paused.
+        if (emergencyShutdown || depositsPaused) return 0;
         return type(uint256).max;
     }
 
     function maxMint(address) public view override(ERC4626, IERC4626) returns (uint256) {
-        if (emergencyShutdown) return 0;
+        if (emergencyShutdown || depositsPaused) return 0;
         return type(uint256).max;
     }
 
@@ -371,8 +374,14 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
                 //   governance action surfaced via AdapterForceDetached.
                 address det = activeAdapter;
                 uint256 marked;
-                try IStrategyAdapter(det).totalAssets() returns (uint256 b) { marked = b; }
-                catch { marked = 0; }
+                // H-01: track whether the NAV read actually succeeded. A reverting
+                //   totalAssets() (broken oracle / not-ready TWAP) yields marked = 0 AND
+                //   navReadOk = false — an UNKNOWN valuation, not a genuine zero. Deposits
+                //   must pause in that case too (see below), or a depositor could mint
+                //   against a pool whose stranded value is uncounted.
+                bool navReadOk;
+                try IStrategyAdapter(det).totalAssets() returns (uint256 b) { marked = b; navReadOk = true; }
+                catch { marked = 0; navReadOk = false; }
                 uint256 received;
                 if (marked > 0) {
                     uint256 balBefore = IERC20(asset()).balanceOf(address(this));
@@ -380,12 +389,18 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
                     received = IERC20(asset()).balanceOf(address(this)) - balBefore;
                 }
                 emit AdapterForceDetached(det, marked, received);
-                // M-03: a shortfall means NAV was written off. Any profit still locked from
-                //   a prior harvest is not real once assets are impaired — clear it so
-                //   totalAssets() reflects the honest raw balance (rather than clamping toward
-                //   zero against a stale buffer), and pause deposits so nobody mints against
-                //   the impaired pool until governance reopens (reattach or reopenDeposits()).
-                if (received < marked) {
+                // H-01: record the unreadable-valuation case explicitly so governance and
+                //   integrators can see WHY deposits paused (marked == 0 alone is ambiguous
+                //   with a genuinely-empty adapter).
+                if (!navReadOk) emit AdapterNavUnreadableOnDetach(det);
+                // M-03 / H-01: pause deposits when the recall realized a shortfall (NAV
+                //   written off) OR the NAV could not be read at all (unknown impairment).
+                //   In both cases any profit still locked from a prior harvest is not real —
+                //   clear it so totalAssets() reflects the honest raw balance (rather than
+                //   clamping toward zero against a stale buffer), and pause deposits so nobody
+                //   mints against the impaired/unknown pool until governance reopens (a
+                //   healthy reattach or reopenDeposits() once valuation is confirmed recovered).
+                if (!navReadOk || received < marked) {
                     _lockedProfit = 0;
                     _lastReport = block.timestamp;
                     depositsPaused = true;

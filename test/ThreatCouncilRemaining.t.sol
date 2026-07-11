@@ -378,14 +378,43 @@ contract ThreatCouncilRemainingTest is Test {
 
     /// DoS6: force-detach also survives an adapter whose totalAssets() reverts
     ///       (not-ready oracle / broken TWAP) — the mark read is try/caught.
+    /// H-01: an UNREADABLE valuation at force-detach means the position could not be
+    ///       marked at all — deposits MUST pause (nobody may mint against an unknown
+    ///       NAV), the pause MUST surface through the max* views, and a deposit attempt
+    ///       MUST revert and mint no shares (no dilution). Strengthened per 2nd review.
     function test_DoS_forceDetach_succeeds_whenTotalAssetsReverts() public {
         _deposit(alice, 1_000 * USDC_6);
         FaultyAdapter f = _swapToFaulty();
         f.setRevertOnTotalAssets(true);
 
+        uint256 supplyBefore = vault.totalSupply();
+
         vm.prank(governance);
         vault.setAdapter(address(0));
         assertEq(vault.activeAdapter(), address(0), "detach bricked by reverting totalAssets");
+
+        // H-01: unreadable NAV → deposits paused, reflected in the ERC-4626 max* views.
+        assertTrue(vault.depositsPaused(), "H-01: deposits not paused after unreadable force-detach");
+        assertEq(vault.maxDeposit(bob), 0, "H-01: maxDeposit not 0 while paused");
+        assertEq(vault.maxMint(bob), 0, "H-01: maxMint not 0 while paused");
+
+        // H-01: a deposit against the mismarked pool reverts and mints nothing (no dilution).
+        //   maxDeposit()==0 → OZ v5 throws ERC4626ExceededMaxDeposit before the vault's own
+        //   "VAULT: deposits paused" check (same ordering as emergency shutdown).
+        vm.startPrank(bob);
+        usdc.approve(address(vault), 1_000 * USDC_6);
+        vm.expectRevert(abi.encodeWithSelector(
+            bytes4(keccak256("ERC4626ExceededMaxDeposit(address,uint256,uint256)")),
+            bob, uint256(1_000 * USDC_6), uint256(0)
+        ));
+        vault.deposit(1_000 * USDC_6, bob);
+        vm.stopPrank();
+        assertEq(vault.totalSupply(), supplyBefore, "H-01: shares minted against impaired pool");
+
+        // reopenDeposits is the governance-confirmed valuation-recovery path.
+        vm.prank(governance);
+        vault.reopenDeposits();
+        assertFalse(vault.depositsPaused(), "H-01: reopen failed");
     }
 
     /// DoS6: emergency shutdown flag is set regardless of adapter health — the valve

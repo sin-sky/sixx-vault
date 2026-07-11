@@ -79,3 +79,27 @@ slither "新規"15件は**行シフトの id ずれ＋同型 FP**（危険検出
 | `PendlePTAdapter.deposit` の `swapper.swap(...)` 戻り値（1→2件目） | unused-return | 意図的 | M-04 の要諦＝swapper の戻り値を**信用せず**実 USDe 残高デルタで検算し `require(usdeIn>=usdeMin)`。戻り値を捨てるのが仕様。 |
 
 その他の "新規" は `_recallFromAdapter`/`setAdapter`/`setEmergencyShutdown`/`__atomicPushToAdapter`/`VenusUSDTAdapter.withdraw`/`_collectFees` 等**今回未編集関数**の行シフト id ずれ＝既存トリアージと同一。M-05 の `buffered = target*BPS*BPS/(slipDenom*slipDenom)` は multiply-before-divide（新規 divide-before-multiply なし）。→ baseline（`audit/slither-baseline.json`）を再凍結。実問題ゼロ。
+
+## 追補（2026-07-12・第2独立レビュー H-01/M-01 remediation 後）
+
+第2独立レビューの **H-01**（force-detach で totalAssets() revert 時も deposit 停止：`setAdapter` に
+`navReadOk` 追跡＋`depositsPaused=true`＋`AdapterNavUnreadableOnDetach`／`maxDeposit`・`maxMint`
+に pause 反映）・**M-01**（Pendle `_swapVia` で swap 毎 exact-approve→0＝swapper 無期限 allowance 廃止）を反映。
+
+`(検出器, 関数)` 単位で baseline 差分を取ると、危険検出器（arbitrary-send / suicidal /
+controlled-delegatecall / reentrancy-eth / unprotected-upgrade / weak-prng / tx-origin）は
+**0 件**。"新規" 28 件はすべて**行シフト id ずれ＋既存 FP クラスの同型インスタンス**で、真に新しいのは
+以下 1 点のみ：
+
+| 新規箇所 | 検出器 | 判定 | 理由 |
+|---|---|---|---|
+| `SIXXVault.setAdapter.navReadOk` | uninitialized-local | 偽陽性 | 既存 `marked`/`received` と同一クラス。Solidity zero-init が正＝`navReadOk` は既定 `false`（＝read 未成功）、`try` 成功分岐でのみ `true`。両分岐で意味が確定。 |
+
+その他は既存トリアージと同型：`setAdapter`/`_recallFromAdapter`/`deposit`/`withdraw` の
+reentrancy-balance・reentrancy-no-eth（全経路 `nonReentrant`＋registry whitelist 済 adapter＝信頼モデル、
+状態更新は CEI 整合、`received` は balance-delta）／`_collectFees` の M-1 希釈式 divide-before-multiply・
+incorrect-equality（`supply==0` 等の制御 guard）／vault→adapter `withdraw`/`deposit` の unused-return
+（実残高デルタで算定＝M13-16）。M-01 の `_swapVia`（`forceApprove(swapper,amountIn)`→`swap`→`forceApprove(swapper,0)`）は
+`deposit`/`withdraw`（`nonReentrant`）配下＝新規 reentrancy-eth 等を生まない。
+
+→ baseline（`audit/slither-baseline.json`）を `--update-slither-baseline` で再凍結。実問題ゼロ。

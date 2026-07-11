@@ -23,6 +23,9 @@ contract Handler is Test {
     SIXXVault public immutable vault;
     IMintableERC20 public immutable usdc;
     MockAdapter public immutable adapter;
+    /// @dev Governance address, so fuzzed governance actions (fee toggling) can be pranked.
+    address public immutable governance;
+    uint256 internal constant MAX_MANAGEMENT_FEE = 500; // 5% hard cap (mirrors the vault)
 
     // ─── Actors ───────────────────────────────────────────────
     address[] public actors;
@@ -44,14 +47,23 @@ contract Handler is Test {
     uint256 public callsYield;
     uint256 public callsHarvest;
     uint256 public callsWarp;
+    uint256 public callsSetFee;
+    uint256 public callsHarvestVault;
 
     uint256 internal constant MAX_ACTION = 1_000_000 * 1e6; // 1M USDC per action cap
 
-    constructor(SIXXVault vault_, IMintableERC20 usdc_, MockAdapter adapter_, address[] memory actors_) {
+    constructor(
+        SIXXVault vault_,
+        IMintableERC20 usdc_,
+        MockAdapter adapter_,
+        address[] memory actors_,
+        address governance_
+    ) {
         vault = vault_;
         usdc = usdc_;
         adapter = adapter_;
         actors = actors_;
+        governance = governance_;
     }
 
     modifier useActor(uint256 actorSeed) {
@@ -141,6 +153,35 @@ contract Handler is Test {
         vm.warp(block.timestamp + dt);
         _checkNoDecrease(before);
         callsWarp++;
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Action: governance toggles the management fee between 0 and a bounded rate
+    //   (P-03: exercises the M-01 anchor-advance path — a 0->nonzero change must only
+    //   ever apply going forward, never retroactively diluting existing LPs. Fees mint
+    //   shares, never assets, so the value-conservation invariants must still hold.)
+    // ─────────────────────────────────────────────────────────
+    function setManagementFee(uint256 bps) external {
+        bps = bound(bps, 0, MAX_MANAGEMENT_FEE);
+        uint256 before = vault.totalAssets();
+        vm.prank(governance);
+        try vault.setManagementFee(bps) {
+            _checkNoDecrease(before);
+            callsSetFee++;
+        } catch {}
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Action: permissionless vault.harvest() (P-03: zero-profit harvest must be a
+    //   no-op on the unlock schedule — M-02 — so repeated calls never suppress
+    //   totalAssets to grief exiting holders).
+    // ─────────────────────────────────────────────────────────
+    function harvestVault() external {
+        uint256 before = vault.totalAssets();
+        try vault.harvest() {
+            _checkNoDecrease(before);
+            callsHarvestVault++;
+        } catch {}
     }
 
     // ─────────────────────────────────────────────────────────

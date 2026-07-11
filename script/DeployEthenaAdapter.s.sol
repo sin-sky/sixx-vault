@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {EthenaSUSDeAdapter} from "../src/adapters/EthenaSUSDeAdapter.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
@@ -45,6 +46,15 @@ contract DeployEthenaAdapter is Script {
     address internal constant ETH_SAFE = 0x4d71aCE4612AB3B71423b454e21c0Bd03c4F8fE0;
 
     function run() external {
+        // L-01 (2nd review): DRY-RUN SIMULATION ONLY in this workflow. The real deploy is
+        //   broadcast by SHIN via the Timelock/Safe, not by this script. Hard-revert under
+        //   --broadcast / --resume so an executable copy in the handoff bundle can never
+        //   deploy live (parity with DeployPendleAdapter.s.sol). To actually ship, run the
+        //   dedicated production path with the Timelock+Safe wiring reviewed.
+        require(
+            !_isBroadcastContext(),
+            "DEPLOY: broadcast forbidden (dry-run sim only; port Timelock+Safe wiring first)"
+        );
         require(block.chainid == ETH_MAINNET, "DeployEthena: mainnet only");
 
         uint256 deployerPk = vm.envUint("PRIVATE_KEY");
@@ -99,5 +109,14 @@ contract DeployEthenaAdapter is Script {
         console2.log("  1. registry.registerAdapter(adapter)");
         console2.log("  2. vault.setAdapter(adapter)");
         console2.log("Dry-run complete (no --broadcast).");
+    }
+
+    /// @dev L-01 (2nd review): true iff the script is executing under `forge script
+    ///      --broadcast` or `--resume`. `virtual` so a test can drive the broadcast branch
+    ///      (forge test cannot enter a real ScriptBroadcast/ScriptResume context); the
+    ///      production body reads the actual forge execution context.
+    function _isBroadcastContext() internal view virtual returns (bool) {
+        return vm.isContext(VmSafe.ForgeContext.ScriptBroadcast)
+            || vm.isContext(VmSafe.ForgeContext.ScriptResume);
     }
 }

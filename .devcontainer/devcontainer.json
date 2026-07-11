@@ -1,0 +1,21 @@
+{
+  "name": "SIXX Vault — audit",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteEnv": {
+    "FOUNDRY_DIR": "/opt/foundry",
+    "SOLC_SELECT_INSTALL_DIR": "/opt/solc-select",
+    "PATH": "/opt/foundry/bin:/usr/local/bin:${containerEnv:PATH}",
+    "FOUNDRY_EVM_VERSION": "cancun"
+  },
+  "postCreateCommand": "git submodule update --init --recursive && bash ./scripts/verify-audit-toolchain.sh || true",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "NomicFoundation.hardhat-solidity",
+        "trailofbits.weaudit"
+      ]
+    }
+  }
+}

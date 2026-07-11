@@ -224,29 +224,39 @@ PY
     record "slither" "SKIP" "(slither not installed)"
   fi
 
-  # ─── Stage 7: aderyn (machine-judged High/Medium gate) ──────
+  # ─── Stage 7: aderyn (SECONDARY machine-judged High/Medium gate) ──────
   # P-02 (2nd review): a real gate, not a soft "report generated". Aderyn's own
   #   "Issue Summary" table is parsed for High/Medium counts and compared to a
   #   TRIAGED baseline (known false positives, documented in audit/ADERYN_TRIAGE.md).
-  #   Any High/Medium ABOVE the baseline fails the build; an abnormal aderyn exit is
-  #   surfaced (FAIL if no report, WARN if a report was still produced) instead of
-  #   being swallowed by `|| true`.
-  banner "Stage 7 — aderyn (High/Medium gate vs triaged baseline)"
+  #
+  #   Role: Slither (Stage 6) is the PRIMARY static-analysis gate (full baseline diff +
+  #   dangerous-detector coverage). Aderyn is a SECONDARY cross-check whose one triaged
+  #   High-1 (reentrancy) is confirmed a false positive against Slither (no reentrancy-eth;
+  #   see audit/ADERYN_TRIAGE.md §cross-check).
+  #
+  #   Crash-safety guarantee (SHIN 2nd review): a PASS is emitted ONLY when ALL of
+  #   (a) a report file exists, (b) it contains a parseable "Issue Summary" table,
+  #   (c) High/Med are within the triaged baseline, AND (d) aderyn exited 0. A crashed /
+  #   incomplete run therefore can only ever yield FAIL or WARN — its High/Med counts are
+  #   NEVER a PASS basis. Validated working version: aderyn 0.6.8 (deterministic exit=0).
+  banner "Stage 7 — aderyn (secondary High/Medium gate vs triaged baseline)"
   if need aderyn; then
     aderyn . -o "$REPORTS/aderyn-report.md" > "$REPORTS/aderyn.log" 2>&1
     arc=$?
     if [ ! -f "$REPORTS/aderyn-report.md" ]; then
-      record "aderyn" "FAIL" "(no report — aderyn exit=$arc; see reports/aderyn.log)"
+      record "aderyn" "FAIL" "(no report — aderyn exit=$arc, likely crashed; see reports/aderyn.log)"
     else
-      # Machine-judge: extract High/Medium counts from the "Issue Summary" table.
-      ad_counts="$(python3 - "$REPORTS/aderyn-report.md" <<'PY'
+      # Machine-judge: the parser emits "FOUND h m" only if a real Issue Summary table
+      # was present; "MISSING 0 0" means the report is malformed/incomplete (e.g. a run
+      # that crashed mid-write) and must NOT be treated as a clean zero-finding PASS.
+      ad_parse="$(python3 - "$REPORTS/aderyn-report.md" <<'PY'
 import sys, re
 high = med = 0
-in_summary = False
+in_summary = found = False
 for line in open(sys.argv[1], encoding='utf-8'):
     s = line.strip().lower()
     if s.startswith('## issue summary'):
-        in_summary = True; continue
+        in_summary = found = True; continue
     if in_summary:
         if line.startswith('#'):  # next top-level/section header → summary ended
             break
@@ -254,16 +264,20 @@ for line in open(sys.argv[1], encoding='utf-8'):
         if m:
             if m.group(1) == 'high': high = int(m.group(2))
             else: med = int(m.group(2))
-print(high, med)
+print(('FOUND' if found else 'MISSING'), high, med)
 PY
 )"
-      AD_HIGH="$(echo "$ad_counts" | awk '{print $1+0}')"
-      AD_MED="$(echo "$ad_counts" | awk '{print $2+0}')"
-      detail="High=${AD_HIGH}(≤${ADERYN_HIGH_BASELINE}) Med=${AD_MED}(≤${ADERYN_MED_BASELINE})"
-      if [ "$AD_HIGH" -gt "$ADERYN_HIGH_BASELINE" ] || [ "$AD_MED" -gt "$ADERYN_MED_BASELINE" ]; then
+      ad_found="$(echo "$ad_parse" | awk '{print $1}')"
+      AD_HIGH="$(echo "$ad_parse" | awk '{print $2+0}')"
+      AD_MED="$(echo "$ad_parse" | awk '{print $3+0}')"
+      detail="High=${AD_HIGH}(≤${ADERYN_HIGH_BASELINE}) Med=${AD_MED}(≤${ADERYN_MED_BASELINE}) exit=${arc}"
+      if [ "$ad_found" != "FOUND" ]; then
+        # Report present but no parseable Issue Summary — incomplete/crashed run.
+        record "aderyn" "FAIL" "(report has no Issue Summary — incomplete/crashed run; not a PASS basis; exit=$arc)"
+      elif [ "$AD_HIGH" -gt "$ADERYN_HIGH_BASELINE" ] || [ "$AD_MED" -gt "$ADERYN_MED_BASELINE" ]; then
         record "aderyn" "FAIL" "(NEW High/Medium beyond triaged baseline — $detail; see audit/ADERYN_TRIAGE.md)"
       elif [ "$arc" -ne 0 ]; then
-        record "aderyn" "WARN" "(aderyn exit=$arc but report parsed — $detail)"
+        record "aderyn" "WARN" "(aderyn exit=$arc but report parsed — $detail; Slither is the primary gate)"
       else
         record "aderyn" "PASS" "no new High/Medium vs triaged baseline ($detail)"
       fi

@@ -1,20 +1,20 @@
 # SIXX Vault — 監査スコープ（SCOPE）
 
-> 外部監査／専門レビュー用。**凍結コミット `0703525`**（`main`・Round 5＝第2独立レビュー H-01／M-01／L-01／P-02／P-03 remediation 反映済）。solc 0.8.28。
-> （履歴：Round 2 `b939dd2` → Round 3 `173e3fb`（Part B P1-P4）→ Round 4 `78aa8c1`（独立 Handoff 監査 M-01〜M-05／L-01）→ 本 Round 5 `0703525`（第2独立レビュー：H-01 unread-detach deposit-pause／M-01 Pendle swapper 無期限 allowance 廃止／L-01 Ethena deploy broadcast-guard／P-02 aderyn ゲート機械判定／P-03 invariant・Echidna 追加）。詳細＝`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
+> 外部監査／専門レビュー用。**凍結コミット `2e8f059`**（`main`・Round 6＝第3レビュー H-02／M-02／M-03／L-02／L-03 remediation 反映済）。solc 0.8.28。
+> （履歴：Round 3 `173e3fb`（Part B P1-P4）→ Round 4 `78aa8c1`（独立 Handoff 監査 M-01〜M-05／L-01）→ Round 5 `0703525`（第2独立レビュー H-01／M-01／L-01／P-02／P-03）→ 本 Round 6 `2e8f059`（第3レビュー：H-02 totalAssets-revert 下でも常に退出可能／M-02 mainnet governance=Timelock 強制／M-03 setAdapter binding 検証／L-02 rescueToken 原資産拒否／L-03 registry list 上限）。詳細＝`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
 > 補完文書：入口＝`audit/README_FOR_REVIEWER.md`／既知FP＝`audit/SLITHER_TRIAGE.md`＋`audit/ADERYN_TRIAGE.md`＋`AUDIT_PACKAGE.md §Slither`／等価変異＝`audit/MUTATION_TRIAGE.md`／自前ハードニング＝`PRE_AUDIT_HARDENING.md`。
 
 ---
 
 ## 1. In-Scope（自前 Solidity＝監査対象）
 
-実測 LoC（`0703525`・`wc -l`）。**合計 3,024 行 / 16 ファイル**（Round 4 比 +34：SIXXVault +15・PendlePTAdapter +14・ISIXXVault +5＝第2独立レビュー H-01/M-01 remediation）。
+実測 LoC（`2e8f059`・`wc -l`）。**合計 3,112 行 / 17 ファイル**（Round 5 比 +88 / +1 file：SIXXVault +55・AdapterRegistry +21・各 adapter +1×3・新規 `ITimelockMinDelay`(11)＝第3レビュー H-02/M-02/M-03/L-02/L-03 remediation）。
 
 ### 1.1 コア（会計・ガバナンス）
 | ファイル | LoC | 役割 |
 |---|---:|---|
-| `src/core/SIXXVault.sol` | 621 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03/H-01：unread-detach も pause＋max\* 反映) |
-| `src/core/AdapterRegistry.sol` | 122 | ガバナンス whitelist（`isActive`/`registerAdapter`） |
+| `src/core/SIXXVault.sol` | 676 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03/H-01)・**totalAssets() revert 耐性(H-02)**・setAdapter binding 検証(M-03)・mainnet gov=Timelock 強制(M-02) |
+| `src/core/AdapterRegistry.sol` | 143 | ガバナンス whitelist（`isActive`/`registerAdapter`）・list 上限(L-03)・mainnet gov=Timelock 強制(M-02) |
 
 ### 1.2 アダプター（各外部プロトコル連携）
 | ファイル | LoC | 連携先（外部＝out-of-scope 本体） |
@@ -28,7 +28,7 @@
 | 区分 | ファイル（LoC） |
 |---|---|
 | 自前コントラクトの IF | `IStrategyAdapter`(80) / `ISIXXVault`(143) / `IAdapterRegistry`(49) |
-| 外部 ABI の自前ヘッダ | `IAavePool`(54) / `IVenusVToken`(47) / `IPendleRouter`(140) / `IPendleCore`(70) / `IStakedUSDeV2`(29) / `ICurveStableSwapNG`(23) / `IStableSwapper`(27) |
+| 外部 ABI の自前ヘッダ | `IAavePool`(54) / `IVenusVToken`(47) / `IPendleRouter`(140) / `IPendleCore`(70) / `IStakedUSDeV2`(29) / `ICurveStableSwapNG`(23) / `IStableSwapper`(27) / `ITimelockMinDelay`(11・M-02 で mainnet Timelock 検証に使用) |
 
 > 外部 ABI ヘッダ自体は自前コード＝**宣言の正しさ（selector/戻り値型/デコード）は in-scope**。指す先の実装は out-of-scope（§2）。
 

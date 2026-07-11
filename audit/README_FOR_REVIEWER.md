@@ -8,7 +8,7 @@
 ## 0. 一言サマリ
 
 ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で単一原資産を運用。実資金（USDC/USDT 等）
-を扱う。**自前 Solidity 3,024 行 / 16 ファイル**が監査対象（`audit/SCOPE.md`）。
+を扱う。**自前 Solidity 3,112 行 / 17 ファイル**が監査対象（`audit/SCOPE.md`）。
 
 ---
 
@@ -17,15 +17,15 @@ ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で
 | 項目 | 値 |
 |---|---|
 | repo | `github.com/sin-sky/sixx-vault` |
-| **監査対象コード凍結（Round 5・第2独立レビュー remediation 形）** | **`0703525`**（H-01 unread-detach deposit-pause＋max\* 反映／M-01 Pendle swapper 無期限 allowance 廃止＝swap 毎 exact-approve→0／L-01 Ethena deploy を broadcast/resume で hard-revert／P-02 aderyn ゲート機械判定＋High triage／P-03 invariant・Echidna 追加） |
-| 前 Round | `78aa8c1`（Round 4・独立 Handoff 監査 M-01〜M-05／L-01） / `173e3fb`（Round 3・ADR-007 ①②③＋Part B P1-P4） / `b939dd2`（Round 2） |
-| 本ハンドオフ束 | `0703525` 近傍 HEAD。zip 名の末尾 shorthash＝バンドル生成コミット |
+| **監査対象コード凍結（Round 6・第3レビュー remediation 形）** | **`2e8f059`**（H-02 totalAssets() revert 下でも常に退出可能＝read-failure fallback／M-02 mainnet governance=Timelock(≥48h) 強制／M-03 setAdapter で adapter の vault/asset/governance binding 検証／L-02 rescueToken が原資産を拒否／L-03 registry list 上限） |
+| 前 Round | `0703525`（Round 5・第2独立レビュー H-01/M-01/L-01/P-02/P-03） / `78aa8c1`（Round 4・独立 Handoff 監査 M-01〜M-05／L-01） / `173e3fb`（Round 3・Part B P1-P4） |
+| 本ハンドオフ束 | `2e8f059` 近傍 HEAD。zip 名の末尾 shorthash＝バンドル生成コミット |
 | solc | **0.8.28** |
 | Foundry | forge **1.7.1** |
 | OpenZeppelin | **v5.6.1**（`lib/openzeppelin-contracts`） |
 | forge-std | **v1.16.1**（`lib/forge-std`） |
 
-> 以降の変更は監査ベンダーと合意の上で。本ハンドオフ zip は凍結 `0703525` の内容を同梱。
+> 以降の変更は監査ベンダーと合意の上で。本ハンドオフ zip は凍結 `2e8f059` の内容を同梱。
 
 ---
 

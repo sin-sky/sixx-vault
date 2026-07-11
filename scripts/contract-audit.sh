@@ -192,20 +192,28 @@ PY
     tail -25 "$REPORTS/invariant.log"
   fi
 
-  # ─── Stage 5: echidna ───────────────────────────────────────
+  # ─── Stage 5: echidna (property fuzzing — both harnesses) ───
   banner "Stage 5 — echidna property fuzzing (limit=$ECHIDNA_LIMIT)"
   if need echidna; then
-    if echidna test/echidna/SIXXVaultEchidna.sol --contract SIXXVaultEchidna \
-         --config echidna.yaml --test-limit "$ECHIDNA_LIMIT" --format text \
-         > "$REPORTS/echidna.log" 2>&1; then
-      if grep -q "falsified\|FAILED" "$REPORTS/echidna.log"; then
-        record "echidna" "FAIL" "(property falsified — see reports/echidna.log)"
+    # SIXXVaultEchidna = accounting core; StateTransitionEchidna = state×fault cross-check.
+    ECH_TOTAL=0; ECH_FAIL=0
+    : > "$REPORTS/echidna.log"
+    for pair in "test/echidna/SIXXVaultEchidna.sol:SIXXVaultEchidna" \
+                "test/echidna/StateTransitionEchidna.sol:StateTransitionEchidna"; do
+      f="${pair%%:*}"; c="${pair##*:}"
+      echo "── $c ──" >> "$REPORTS/echidna.log"
+      if echidna "$f" --contract "$c" --config echidna.yaml \
+           --test-limit "$ECHIDNA_LIMIT" --format text >> "$REPORTS/echidna.log" 2>&1; then
+        if grep -q "falsified\|FAILED" "$REPORTS/echidna.log"; then ECH_FAIL=1; fi
       else
-        props="$(grep -c ': passing' "$REPORTS/echidna.log" 2>/dev/null || echo 0)"
-        record "echidna" "PASS" "${props} properties passing"
+        ECH_FAIL=1
       fi
+    done
+    ECH_TOTAL="$(grep -c ': passing' "$REPORTS/echidna.log" 2>/dev/null || echo 0)"
+    if [ "$ECH_FAIL" = "0" ]; then
+      record "echidna" "PASS" "${ECH_TOTAL} properties passing (2 harnesses: core + state×fault)"
     else
-      record "echidna" "FAIL" "(echidna error — see reports/echidna.log)"
+      record "echidna" "FAIL" "(property falsified / error — see reports/echidna.log)"
       tail -15 "$REPORTS/echidna.log"
     fi
   else

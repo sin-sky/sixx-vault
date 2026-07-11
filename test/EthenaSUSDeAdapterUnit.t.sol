@@ -277,6 +277,28 @@ contract EthenaSUSDeAdapterUnitTest is Test {
         adapter.withdraw(1_000e6, recipient);
     }
 
+    // F-3 (adversarial hardening): a dust partial-withdraw whose grossed-up target
+    // rounds to zero sUSDe shares MUST revert, NOT silently liquidate the whole
+    // position (the old `sharesToSell == 0 -> sell all` fallback). Reproduced by an
+    // extreme sUSDe rate so convertToShares(targetUsde) truncates to 0 while the
+    // request is still a partial (assets < totalAssets()).
+    function test_F3_dustWithdraw_reverts_insteadOf_drainingAll() public {
+        _vaultDeposit(1_000e6);
+        // Re-denominate sUSDe so each share is worth an astronomical amount of USDe;
+        // convertToShares(~1.005e12) then floors to 0 for a 1-unit (1e-6 USDC) request.
+        susde.setRate(1e31);
+        uint256 sharesBefore = susde.balanceOf(address(adapter));
+        assertGt(sharesBefore, 0, "precondition: adapter holds a position");
+        assertLt(1, adapter.totalAssets(), "precondition: request is a partial exit");
+
+        vm.prank(vault);
+        vm.expectRevert("ADAPTER: dust");
+        adapter.withdraw(1, recipient);
+
+        // Position must be untouched — the whole point of the fix.
+        assertEq(susde.balanceOf(address(adapter)), sharesBefore, "F-3: position was liquidated on a dust request");
+    }
+
     function test_withdraw_zero_recipient_reverts() public {
         _vaultDeposit(10_000e6);
         vm.prank(vault);

@@ -119,10 +119,13 @@ contract AdapterRegistry is IAdapterRegistry {
 
     function proposeGovernance(address newGovernance) external onlyGovernance {
         require(newGovernance != address(0), "REGISTRY: zero address");
-        // M-02 (3rd review): on mainnet, registry governance MUST also be a
-        //   TimelockController(>=48h) so registerAdapter/setAdapterStatus inherit the 48h
-        //   detection window (mainnet-gate G1). Off-mainnet keeps EOA for iteration.
-        if (block.chainid == 1) {
+        // M-02 (3rd review) / F-1: on every PRODUCTION chain, registry governance MUST
+        //   also be a TimelockController(>=48h) so registerAdapter/setAdapterStatus inherit
+        //   the 48h detection window (mainnet-gate G1). The production set must track the
+        //   chains the deploy script wires with a real Safe + Timelock — Ethereum (1),
+        //   Arbitrum One (42161), BNB Chain (56) — not chainid==1 alone (which left the
+        //   vault's primary chain, Arbitrum One, unprotected). Testnets keep EOA for iteration.
+        if (_isProductionChain()) {
             require(newGovernance.code.length > 0, "REGISTRY: mainnet gov must be a Timelock");
             try ITimelockMinDelay(newGovernance).getMinDelay() returns (uint256 d) {
                 require(d >= 48 hours, "REGISTRY: mainnet gov timelock < 48h");
@@ -132,6 +135,15 @@ contract AdapterRegistry is IAdapterRegistry {
         }
         emit GovernanceProposed(governance, newGovernance); // Part B P2: observability
         pendingGovernance = newGovernance;
+    }
+
+    /// @dev F-1: chains where governance MUST be a >= 48h Timelock (M-02) — the production
+    ///      mainnets the deploy script wires with a real Safe + TimelockController:
+    ///      Ethereum (1), Arbitrum One (42161), BNB Chain (56). Kept in lockstep with
+    ///      SIXXVault._isProductionChain(). Testnets/local are excluded for iteration.
+    function _isProductionChain() private view returns (bool) {
+        uint256 id = block.chainid;
+        return id == 1 || id == 42161 || id == 56;
     }
 
     function acceptGovernance() external {

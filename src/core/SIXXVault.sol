@@ -617,10 +617,12 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
     function proposeGovernance(address newGovernance) external override onlyGovernance {
         require(newGovernance != address(0), "VAULT: zero address");
-        // M-02 (3rd review): on Ethereum mainnet, governance MUST be a TimelockController
-        //   with >= 48h delay — never a hot EOA. Off-mainnet (testnets/local) keeps EOA
-        //   governance for iteration. Complements the mainnet-gate G1 manual check.
-        if (block.chainid == 1) {
+        // M-02 (3rd review) / F-1: on every PRODUCTION chain, governance MUST be a
+        //   TimelockController with >= 48h delay — never a hot EOA. Off-production
+        //   (testnets/local) keeps EOA governance for iteration. Complements the
+        //   mainnet-gate G1 manual check. The production set must match the chains the
+        //   deploy script wires with a real 2-of-3 Safe + Timelock (see _isProductionChain).
+        if (_isProductionChain()) {
             // Must be a contract first (an EOA staticcall returns empty data, which would
             // fail to decode BEFORE reaching the catch), then a Timelock with >= 48h delay.
             require(newGovernance.code.length > 0, "VAULT: mainnet gov must be a Timelock");
@@ -639,6 +641,18 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         emit GovernanceAccepted(pendingGovernance);
         governance = pendingGovernance;
         pendingGovernance = address(0);
+    }
+
+    /// @dev F-1: chains where governance MUST be a >= 48h Timelock (M-02). This set
+    ///      MUST track the production mainnets the deploy script wires with a real
+    ///      2-of-3 Safe + TimelockController: Ethereum (1), Arbitrum One (42161),
+    ///      BNB Chain (56). Arbitrum One is this vault's PRIMARY chain, so gating on
+    ///      chainid==1 alone left the M-02 detection window unenforced where it matters
+    ///      most. Testnets/local (Sepolia, Arb Sepolia, BNB testnet, 31337) are excluded
+    ///      so EOA governance stays usable for iteration.
+    function _isProductionChain() private view returns (bool) {
+        uint256 id = block.chainid;
+        return id == 1 || id == 42161 || id == 56;
     }
 
     // =========================================

@@ -30,7 +30,13 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///                     (b) is required for the vault's `received >= toWithdraw`
 ///                     shortfall guard (M13-16) to hold on a full drain / migration:
 ///                     actual exit slippage (<0.5%) is smaller than the haircut, so a
-///                     100% recall delivers at least the reported amount.
+///                     100% recall delivers at least the reported amount. SCOPE (F-1):
+///                     convertToAssets is Ethena's INTERNAL, peg-blind USDe rate and the
+///                     haircut (<= 3%) only covers ordinary AMM slippage; under a
+///                     USDe/sUSDe depeg DEEPER than the haircut the real DEX exit delivers
+///                     LESS than the mark and that property no longer holds. That is the
+///                     disclosed depeg risk, contained by emergency-shutdown force-detach
+///                     (write-off + deposit pause), NOT by this haircut.
 ///      - harvest: no-op (sUSDe auto-appreciates via convertToAssets).
 ///
 ///      Route venues are immutable and validated against `coins()` at construction.
@@ -294,7 +300,14 @@ contract EthenaSUSDeAdapter is IStrategyAdapter, ReentrancyGuard {
             uint256 targetUsde =
                 (assets * USDE_TO_USDC_SCALE * MAX_BPS) / (MAX_BPS - slippageBps);
             sharesToSell = susde.convertToShares(targetUsde);
-            if (sharesToSell > shares || sharesToSell == 0) sharesToSell = shares;
+            // Cap an over-large slice at the full balance (still a partial-intent exit).
+            if (sharesToSell > shares) sharesToSell = shares;
+            // F-3: a dust request that rounds to zero shares must REVERT, never fall
+            //   through to liquidating the ENTIRE position (the old `== 0 -> sell all`
+            //   fallback). Mirrors the Pendle adapter's `require(ptToLiq > 0, "dust")`.
+            //   Full exits are handled by the `assets >= totalAssets()` branch above, so
+            //   reaching here with zero shares means the request is unserviceably small.
+            require(sharesToSell > 0, "ADAPTER: dust");
         }
 
         // Slippage floor for the whole route: >= (1 - 0.5%) of the sold sUSDe's

@@ -173,6 +173,68 @@ contract ThirdReviewRemediationTest is Test {
     }
 
     // =====================================================================
+    // F-1 — the M-02 Timelock-governance guard must ALSO fire on the
+    //        non-Ethereum production chains the deploy script wires as
+    //        mainnet: Arbitrum One (42161) and BNB Chain (56). The guard
+    //        previously keyed on chainid==1 only, leaving the vault's
+    //        PRIMARY production chain (Arbitrum One) able to hand governance
+    //        to a bare EOA — silently defeating the 48h detection window.
+    // =====================================================================
+
+    function test_F1_vault_proposeGovernance_arbitrumOne_rejectsEOA() public {
+        vm.chainId(42161);
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: mainnet gov must be a Timelock"));
+        vault.proposeGovernance(bob);
+    }
+
+    function test_F1_vault_proposeGovernance_bnb_rejectsEOA() public {
+        vm.chainId(56);
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: mainnet gov must be a Timelock"));
+        vault.proposeGovernance(bob);
+    }
+
+    function test_F1_vault_proposeGovernance_arbitrumOne_rejectsShortTimelock() public {
+        vm.chainId(42161);
+        TimelockController tl = _newTimelock(24 hours);
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: mainnet gov timelock < 48h"));
+        vault.proposeGovernance(address(tl));
+    }
+
+    function test_F1_vault_proposeGovernance_arbitrumOne_acceptsTimelock48h() public {
+        vm.chainId(42161);
+        TimelockController tl = _newTimelock(48 hours);
+        vm.prank(governance);
+        vault.proposeGovernance(address(tl));
+        assertEq(vault.pendingGovernance(), address(tl), "F-1: 48h Timelock rejected on Arbitrum One");
+    }
+
+    function test_F1_registry_proposeGovernance_arbitrumOne_rejectsEOA() public {
+        vm.chainId(42161);
+        vm.prank(governance);
+        vm.expectRevert(bytes("REGISTRY: mainnet gov must be a Timelock"));
+        registry.proposeGovernance(bob);
+    }
+
+    function test_F1_registry_proposeGovernance_bnb_rejectsEOA() public {
+        vm.chainId(56);
+        vm.prank(governance);
+        vm.expectRevert(bytes("REGISTRY: mainnet gov must be a Timelock"));
+        registry.proposeGovernance(bob);
+    }
+
+    // Testnets stay EOA-friendly for iteration: Arbitrum Sepolia (421614)
+    // and BNB Testnet (97) must NOT require a Timelock.
+    function test_F1_vault_proposeGovernance_arbSepolia_allowsEOA() public {
+        vm.chainId(421614);
+        vm.prank(governance);
+        vault.proposeGovernance(bob);
+        assertEq(vault.pendingGovernance(), bob, "F-1: EOA blocked on Arbitrum Sepolia testnet");
+    }
+
+    // =====================================================================
     // M-03 — setAdapter verifies the adapter's vault/asset/governance binding
     // =====================================================================
 

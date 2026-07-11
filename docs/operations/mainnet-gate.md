@@ -15,10 +15,15 @@
 ## G1. ガバナンス・ハードニング（Part B P5・AC4 — **必須**）
 
 - [ ] `governance` = **TimelockController(48h)**（単一 EOA 禁止）。deploy script は EOA gov で revert する設計（C-1）だが、**実アドレスが Timelock であることを明示確認**。
-  - **M-02（第3レビュー・オンチェーン強制済）**：`SIXXVault`/`AdapterRegistry` の `proposeGovernance` は
-    mainnet（`chainid==1`）で **`code.length>0` かつ `ITimelockMinDelay.getMinDelay() >= 48h`** を要求し、
-    EOA / 48h 未満 Timelock を revert する。本チェックリストは初期 governance（constructor 配線）と
-    ローテ先の**実体が正しい Timelock か**の目視確認を担う（オンチェーン強制はローテ経路をカバー）。
+  - **M-02（第3レビュー・オンチェーン強制済／F-1 で本番チェーン集合に拡張）**：`SIXXVault`/`AdapterRegistry`
+    の `proposeGovernance` は**全本番チェーン**（`_isProductionChain()` = Ethereum `1`／Arbitrum One `42161`／
+    BNB `56`）で **`code.length>0` かつ `ITimelockMinDelay.getMinDelay() >= 48h`** を要求し、
+    EOA / 48h 未満 Timelock を revert する。
+    - ⚠️ **F-1 修正前は `chainid==1` のみ**で、deploy が本番配線する Arbitrum One / BNB では強制が無効だった
+      （生 EOA へ governance 移譲可能）。本 vault の主戦場は Arbitrum One。新チェーンを deploy 対象に追加する際は
+      `Deploy.s.sol` の chain 集合と `SIXXVault._isProductionChain` / `AdapterRegistry._isProductionChain` の
+      **3 箇所を同時更新**すること（不一致は本ゲートの盲点になる）。
+    - 本チェックリストは初期 governance（constructor 配線）とローテ先の**実体が正しい Timelock か**の目視確認を担う。
 - [ ] `guardian` = 各チェーン **2-of-3 Gnosis Safe**（`setEmergencyShutdown` の即時 pause 権限）。
 - [ ] `feeRecipient` = 承認済 treasury（EOA でないこと推奨）。
 - [ ] **AdapterRegistry の `governance` も Timelock 配下**（`registerAdapter` / `setAdapterStatus` が自動的に 48h 遅延を受ける）。
@@ -36,6 +41,13 @@
 
 - [ ] `setAdapter(address(0))`（force-detach）と `setEmergencyShutdown(true)` の権限保有者が正しい鍵（guardian/gov）であること。
 - [ ] デペグ runbook（Ethena/Pendle exit 床 revert 時の手順）が運用手順書に存在。
+- [ ] **F-2（NAV × 可変 slippage 裁定の運用緩和・Ethena/haircut 連動 adapter 該当時）**：
+  - [ ] 当該 vault の `lockPeriod` を **非ゼロに設定**（`setLockPeriod`）。`EthenaSUSDeAdapter.totalAssets()` は
+    可変 `slippageBps` に連動するため、`slippageBps` を絞る（例 300→50）と NAV が単一 tx で最大 ~2.5% 跳ねる。
+    `lockPeriod==0` だと「tighten 直前 deposit → 直後 redeem」で既存 holder から裁定抽出可能。非ゼロ lock（H-2/H-4）で
+    round-trip を封鎖する（一般 JIT 防御も兼ねる）。詳細＝`audit/ADVERSARIAL_HARDENING_2026-07-12.md` F-2。
+  - [ ] `setSlippageBps` 変更手順は **変更前後で deposit を pause**（adapter `pause()` か vault emergency）し、
+    NAV 段差を跨ぐ新規入金/退出を止めてから実施する。
 
 ## G4. Keeper / 非カストディ（DCA 該当時）
 

@@ -122,11 +122,16 @@ contract VenusUSDTAdapter is IStrategyAdapter, ReentrancyGuard {
     ///      it is a NON-view function (it calls `accrueInterest()` and mutates
     ///      state), whereas `totalAssets()` must stay `view` (ERC-4626 +
     ///      IStrategyAdapter interface + the vault's own `view` totalAssets).
-    ///      The staleness is at most one block of USDT supply interest (~3s of
-    ///      yield): it under-reports totalAssets — conservative for redemptions,
-    ///      and on deposits it hands the incoming depositor a marginally favorable
-    ///      share price, bounded by that same sub-block dust (not exploitable).
-    ///      It never touches actual redemptions, which accrue fresh on-chain.
+    ///      The staleness is the supply interest accrued SINCE THE LAST Venus
+    ///      interaction on this market (exchangeRateStored only advances when a
+    ///      mint/redeem/borrow/repay/accrueInterest touches the market — an idle
+    ///      single-asset market can lag minutes–hours, not one block): it
+    ///      under-reports totalAssets — conservative for redemptions — and on
+    ///      deposits it hands the incoming depositor a marginally favorable share
+    ///      price, bounded by that pending-interest slice (economically negligible:
+    ///      the depositor captures only their pro-rata fraction of interest since
+    ///      last accrual, minus gas — not exploitable). Actual redemptions accrue
+    ///      the rate fresh on-chain, so exits are always at the true rate.
     function totalAssets() external view override returns (uint256) {
         return _underlyingValue();
     }

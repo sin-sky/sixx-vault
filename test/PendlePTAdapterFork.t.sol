@@ -235,6 +235,56 @@ contract PendlePTAdapterForkTest is Test {
         assertGt(apy, 100, "APY too low");
         assertLt(apy, 2000, "APY too high");
     }
+
+    // ─────────────────────────────────────────────────────────
+    // M-04: deposit must trust the ACTUAL USDe received, not the
+    //       swapper's returned value.
+    // ─────────────────────────────────────────────────────────
+
+    /// A swapper that pulls the full USDC but delivers (and would report) less USDe than
+    /// the par-referenced min-out must not let the adapter size a Pendle leg from the lie.
+    /// The balance-delta check reverts the deposit instead.
+    function test_M04_deposit_revertsWhenSwapperUnderDelivers() public {
+        ShortingSwapper evil = new ShortingSwapper();
+        evil.setDeliverBps(5_000); // deliver only 50% of USDe, but return the full amount
+        deal(USDE, address(evil), 5_000_000e18);
+
+        vm.prank(governance);
+        adapter.setSwapper(address(evil));
+
+        deal(USDC, address(this), DEPOSIT);
+        IERC20(USDC).safeTransfer(address(adapter), DEPOSIT);
+        vm.expectRevert(bytes("ADAPTER: swap shortfall"));
+        adapter.deposit(DEPOSIT);
+    }
+
+    /// A par-honest swapper (delivers exactly what it returns) still deposits fine — proves
+    /// the M-04 delta check does not reject legitimate swaps.
+    function test_M04_deposit_okWhenSwapperHonest() public {
+        _deposit(DEPOSIT);
+        assertGt(IERC20(PT).balanceOf(address(adapter)), 0, "honest swap failed to build a position");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // M-05: partial exit must survive slippage on BOTH lossy legs.
+    // ─────────────────────────────────────────────────────────
+
+    /// With a haircut on the second (sUSDe->USDC) leg equal to the per-leg tolerance, a
+    /// partial exit must STILL deliver at least the requested amount — the compounded
+    /// two-leg gross-up covers both legs, where a single-leg buffer would under-deliver
+    /// and trip the vault's `received >= toWithdraw` guard.
+    function test_M05_partialExit_twoLegSlippage_stillDelivers() public {
+        _deposit(DEPOSIT);
+        skip(1 days);
+
+        // Second leg loses a full per-leg tolerance (0.5%) on top of the AMM's own slippage.
+        swapper.setHaircutBps(adapter.slippageBps());
+
+        uint256 want = 3_000e6;
+        uint256 got = adapter.withdraw(want, user);
+        assertGe(got, want, "M-05: partial under-delivered despite two-leg gross-up");
+        assertGt(IERC20(PT).balanceOf(address(adapter)), 0, "position fully drained on a partial exit");
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -318,5 +368,32 @@ contract ReentrantSwapper is IStableSwapper {
         uint256 out = amountIn * 1e12; // USDC(6) -> USDe(18) par (only path reached)
         IERC20(USDE).safeTransfer(to, out);
         return out;
+    }
+}
+
+/// @notice Malicious/faulty swapper for the M-04 test: pulls the full input and RETURNS
+///         the honest par amount, but only DELIVERS `deliverBps` of it. Also ignores the
+///         min-out, so only the adapter's own balance-delta check can catch the shortfall.
+contract ShortingSwapper is IStableSwapper {
+    using SafeERC20 for IERC20;
+
+    address constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address constant USDE = 0x4c9EDD5852cd905f086C759E8383e09bff1E68B3;
+
+    uint256 public deliverBps = 10_000;
+
+    function setDeliverBps(uint256 bps) external {
+        deliverBps = bps;
+    }
+
+    function swap(address tokenIn, address tokenOut, uint256 amountIn, uint256, address to)
+        external
+        returns (uint256 amountOut)
+    {
+        IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
+        // Only USDC->USDe is exercised by the deposit path under test.
+        amountOut = tokenIn == USDC && tokenOut == USDE ? amountIn * 1e12 : amountIn;
+        // Deliver less than reported; return the FULL (honest-looking) amount as the lie.
+        IERC20(tokenOut).safeTransfer(to, (amountOut * deliverBps) / 10_000);
     }
 }

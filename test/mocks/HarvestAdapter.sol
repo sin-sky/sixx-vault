@@ -20,9 +20,26 @@ contract HarvestAdapter is IStrategyAdapter {
     ///      until harvest() realizes them (the discrete jump).
     uint256 public pendingReward;
 
+    /// @dev Fraction of a requested withdraw actually delivered (bps). < 10_000 lets a
+    ///      force-detach realize a writeoff (received < marked) — used by the M-03 tests.
+    uint256 public deliverBps = 10_000;
+
     constructor(address asset_, address vault_) {
         asset = asset_;
         vault = vault_;
+    }
+
+    function setDeliverBps(uint256 bps) external {
+        deliverBps = bps;
+    }
+
+    /// @notice Test helper: model a realized loss on already-harvested principal — the
+    ///         mark (totalAssets) drops and the tokens leave the adapter, so raw vault
+    ///         assets can fall at/under a still-locked profit buffer (the M-03 hazard).
+    function simulateLoss(uint256 amount, address sink) external {
+        require(amount <= _balance, "HARVEST: loss > balance");
+        _balance -= amount;
+        IERC20(asset).safeTransfer(sink, amount);
     }
 
     modifier onlyVault() {
@@ -49,11 +66,14 @@ contract HarvestAdapter is IStrategyAdapter {
     function withdraw(uint256 assets, address recipient)
         external override onlyVault returns (uint256)
     {
-        require(assets <= _balance, "HARVEST: insufficient");
-        _balance -= assets;
-        IERC20(asset).safeTransfer(recipient, assets);
-        emit Withdrawn(assets, assets, recipient);
-        return assets;
+        // Deliver the (optionally haircut) amount; under-delivery models realizable < mark
+        //   so a force-detach best-effort recall writes off the shortfall (M-03).
+        uint256 send = (assets * deliverBps) / 10_000;
+        if (send > _balance) send = _balance;
+        _balance -= send;
+        IERC20(asset).safeTransfer(recipient, send);
+        emit Withdrawn(assets, send, recipient);
+        return send;
     }
 
     /// @notice Realize the pending reward — this is where totalAssets() jumps.

@@ -67,3 +67,15 @@ slither "新規"15件は**行シフトの id ずれ＋同型 FP**（危険検出
 
 ## 追補（2026-07-11・ADR-007 #3 fee crystallize 後）
 `collectFees` を external(nonReentrant) ラッパー＋internal `_collectFees` に分割し deposit/mint/withdraw/redeem/setManagementFee 冒頭で呼出。slither "新規"は行シフトの id ずれ＋同型 FP（危険 0）。baseline 再凍結。
+
+## 追補（2026-07-11・独立 Handoff 監査 M-01〜M-05/L-01 remediation 後）
+外部レビュー（`SIXX_Vault_Handoff_Audit_Report.md`）の M-01（fee 0→非0 anchor 前進）・M-02（zero-profit harvest でクロック非更新）・M-03（force-detach writeoff で lockedProfit クリア＋deposit 一時停止）・M-04（Pendle deposit で USDe/PT の balanceOf デルタ検算）・M-05（部分引出の2レグ複利 gross-up）・L-01（Pendle deploy を broadcast/resume で hard-revert）を反映。
+
+`(検出器, 関数)` 単位で baseline と差分を取ると、行シフトによる id ずれを除いた**真の新規は以下 2 点のみ**。いずれも **M-04 の残高デルタ・ハードニングそのものの副作用**で、既存トリアージと同型の受容/意図クラス。危険検出器（arbitrary-send / suicidal / delegatecall / reentrancy-eth / unprotected-upgrade / weak-prng）は **0 件**。
+
+| 新規箇所 | 検出器 | 判定 | 理由 |
+|---|---|---|---|
+| `PendlePTAdapter.deposit` の `usdeBefore/usdeIn`・`ptBefore/ptGained`（M-04 残高デルタ read×4） | reentrancy-balance | 偽陽性 | `deposit` は `nonReentrant`＝再入不可。残高 read は M13-16 と同型の balance-delta 検算（`_recallFromAdapter`/`setAdapter` で既受容の FP クラス）。stale 値は不使用。 |
+| `PendlePTAdapter.deposit` の `swapper.swap(...)` 戻り値（1→2件目） | unused-return | 意図的 | M-04 の要諦＝swapper の戻り値を**信用せず**実 USDe 残高デルタで検算し `require(usdeIn>=usdeMin)`。戻り値を捨てるのが仕様。 |
+
+その他の "新規" は `_recallFromAdapter`/`setAdapter`/`setEmergencyShutdown`/`__atomicPushToAdapter`/`VenusUSDTAdapter.withdraw`/`_collectFees` 等**今回未編集関数**の行シフト id ずれ＝既存トリアージと同一。M-05 の `buffered = target*BPS*BPS/(slipDenom*slipDenom)` は multiply-before-divide（新規 divide-before-multiply なし）。→ baseline（`audit/slither-baseline.json`）を再凍結。実問題ゼロ。

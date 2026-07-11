@@ -271,9 +271,15 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         require(block.timestamp < expiry, "ADAPTER: matured");
 
         // Leg 1: USDC -> USDe (par-referenced min-out).
+        // M-04: size the Pendle leg from the ACTUAL USDe received (balance delta), never
+        //   the swapper's return value. A faulty/compromised/misconfigured swapper could
+        //   pull the full USDC yet return (or deliver) a smaller amount; trusting that lie
+        //   would build a position smaller than the shares the vault already minted.
         uint256 usdeMin = _applySlip(_usdcToUsde(assets));
-        uint256 usdeIn = swapper.swap(asset, usde, assets, usdeMin, address(this));
-        require(usdeIn > 0, "ADAPTER: no usde");
+        uint256 usdeBefore = IERC20(usde).balanceOf(address(this));
+        swapper.swap(asset, usde, assets, usdeMin, address(this));
+        uint256 usdeIn = IERC20(usde).balanceOf(address(this)) - usdeBefore;
+        require(usdeIn >= usdeMin, "ADAPTER: swap shortfall");
 
         // Leg 2: USDe -> PT via the market AMM.
         uint256 rate = _ptToAssetRate();                 // PT->USDe, <1e18 pre-maturity
@@ -295,7 +301,12 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
             swapData: SwapData({swapType: SwapType.NONE, extRouter: address(0), extCalldata: "", needScale: false})
         });
 
+        // M-04: also measure the PT balance delta rather than trusting the router's
+        //   reported out — require the position actually grew by at least the min-out.
+        uint256 ptBefore = pt.balanceOf(address(this));
         pendleRouter.swapExactTokenForPt(address(this), market, minPtOut, guess, input, _emptyLimit());
+        uint256 ptGained = pt.balanceOf(address(this)) - ptBefore;
+        require(ptGained >= minPtOut, "ADAPTER: pt shortfall");
 
         deposited = assets;
         emit Deposited(assets, deposited);
@@ -333,8 +344,15 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         } else {
             uint256 ptMarkUsdc = ta - idle0;                       // USDC value backed by PT
             uint256 targetFromPt = assets - idle0;
-            // Buffer the target up so realized (net of two swap legs) can reach it.
-            uint256 buffered = (targetFromPt * BPS) / (BPS - slippageBps);
+            // M-05: the exit crosses TWO slippage-bounded legs (PT->sUSDe, then sUSDe->USDC).
+            //   Buffering a single leg let both legs clear at their configured min-out and
+            //   still deliver below the request, reverting an ordinary partial exit at the
+            //   vault's `received >= toWithdraw` guard (a liveness failure, not theft).
+            //   Compound the gross-up over both legs with round-up (ceil) math so a partial
+            //   exit that stays within the per-leg slippage bound remains serviceable.
+            uint256 slipDenom = BPS - slippageBps;
+            uint256 buffered = (targetFromPt * BPS * BPS + slipDenom * slipDenom - 1)
+                / (slipDenom * slipDenom);
             ptToLiq = (ptBal * buffered) / ptMarkUsdc;
             if (ptToLiq > ptBal) ptToLiq = ptBal;
             require(ptToLiq > 0, "ADAPTER: dust");

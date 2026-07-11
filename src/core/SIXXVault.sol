@@ -46,6 +46,13 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     address public override feeRecipient;
     bool public override emergencyShutdown;
 
+    /// @dev M-03: set true when a force-detach (setAdapter(address(0))) realizes a
+    ///      writeoff (recalled < marked NAV). While true, deposits are blocked so nobody
+    ///      can mint against an impaired pool before governance has assessed the loss.
+    ///      Cleared by attaching a healthy adapter (setAdapter(newAdapter)) or by the
+    ///      explicit reopenDeposits().
+    bool public override depositsPaused;
+
     /// @dev Amount of assets currently deployed to the active adapter
     uint256 private _totalDebt;
     /// @dev Timestamp of last fee collection
@@ -174,10 +181,17 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
             uint256 afterBal = IStrategyAdapter(adapter_).totalAssets();
             if (afterBal > beforeBal) profit = afterBal - beforeBal;
         }
-        // Carry the still-locked remainder + the new profit; restart the unlock clock.
-        _lockedProfit = lockedProfit() + profit;
-        _lastReport = block.timestamp;
-        emit ProfitLocked(profit, _lockedProfit);
+        // M-02: only carry-and-restart the unlock clock when new profit was actually
+        //   realized. harvest() is permissionless; a zero-profit call must NOT reset
+        //   _lastReport, or anyone could repeatedly re-extend the release tail of
+        //   already-locked profit (suppressing totalAssets() to grief exiting holders).
+        //   With profit == 0 the existing linear schedule is preserved untouched.
+        if (profit > 0) {
+            // Carry the still-locked remainder + the new profit; restart the unlock clock.
+            _lockedProfit = lockedProfit() + profit;
+            _lastReport = block.timestamp;
+            emit ProfitLocked(profit, _lockedProfit);
+        }
     }
 
     // =========================================
@@ -219,6 +233,21 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         uint256 shares
     ) internal override {
         require(!emergencyShutdown, "VAULT: emergency shutdown");
+        // M-03: refuse deposits while paused after a lossy force-detach (governance must
+        //   reopen). Separately, block the specific hazard the finding describes — a deposit
+        //   minting against a locked-profit-SUPPRESSED denominator: raw assets have fallen
+        //   at/under the still-locked buffer, so totalAssets() clamps toward zero and a dust
+        //   depositor could mint cheaply, then benefit as the buffer decays / assets recover.
+        //   Only the locked-profit artifact is guarded (lp > 0); a plain zero-NAV from a
+        //   fully-stuck adapter is the documented force-detach writeoff tradeoff, out of
+        //   this finding's scope, and stays governed by the existing recovery model.
+        require(!depositsPaused, "VAULT: deposits paused");
+        uint256 lp = lockedProfit();
+        if (lp > 0) {
+            uint256 rawAssets = IERC20(asset()).balanceOf(address(this)) +
+                (activeAdapter != address(0) ? IStrategyAdapter(activeAdapter).totalAssets() : 0);
+            require(rawAssets > lp, "VAULT: assets impaired");
+        }
         super._deposit(caller, receiver, assets, shares);
 
         // H-3: Only extend the receiver's lock when they deposit for themselves.
@@ -351,6 +380,17 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
                     received = IERC20(asset()).balanceOf(address(this)) - balBefore;
                 }
                 emit AdapterForceDetached(det, marked, received);
+                // M-03: a shortfall means NAV was written off. Any profit still locked from
+                //   a prior harvest is not real once assets are impaired — clear it so
+                //   totalAssets() reflects the honest raw balance (rather than clamping toward
+                //   zero against a stale buffer), and pause deposits so nobody mints against
+                //   the impaired pool until governance reopens (reattach or reopenDeposits()).
+                if (received < marked) {
+                    _lockedProfit = 0;
+                    _lastReport = block.timestamp;
+                    depositsPaused = true;
+                    emit DepositsPausedSet(true);
+                }
             } else {
                 // MIGRATION (unchanged, strict) — M13-16 (Medium-A): apply the
                 //   balance-delta guard. Require the real amount received covers the full
@@ -375,6 +415,12 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
         // Deploy to new adapter (skip if address(0) = pause strategy)
         if (newAdapter != address(0)) {
+            // M-03: attaching a healthy strategy is governance re-opening after a lossy
+            //   detach — lift the deposit pause (a no-op when it was never set).
+            if (depositsPaused) {
+                depositsPaused = false;
+                emit DepositsPausedSet(false);
+            }
             _deployToAdapter();
         }
     }
@@ -404,6 +450,15 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     function setManagementFee(uint256 newFee) external onlyGovernance {
         _collectFees(); // ADR-007 #3: crystallize at the old rate before changing (no retroactive fee)
         require(newFee <= MAX_MANAGEMENT_FEE, "VAULT: fee too high");
+        // M-01: while managementFee == 0, _collectFees() early-returns WITHOUT advancing
+        //   _lastHarvestTimestamp (nothing accrues at a zero rate), so the fee anchor is
+        //   left stale across the whole zero-fee window. Enabling a nonzero rate would then
+        //   let the next collect charge the new rate retroactively over that elapsed zero-fee
+        //   period, diluting existing LPs. Advance the anchor here so a 0->nonzero change only
+        //   ever applies going forward.
+        if (managementFee == 0) {
+            _lastHarvestTimestamp = block.timestamp;
+        }
         emit ManagementFeeUpdated(managementFee, newFee); // Part B P2: observability
         managementFee = newFee;
     }
@@ -489,6 +544,14 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
             }
         }
         emit EmergencyShutdown(active);
+    }
+
+    /// @notice M-03: Explicitly lift the deposit pause set by a lossy force-detach while
+    ///         the strategy stays idle (activeAdapter == address(0)). Attaching a healthy
+    ///         adapter reopens automatically; this is the stay-paused-strategy path.
+    function reopenDeposits() external override onlyGovernance {
+        depositsPaused = false;
+        emit DepositsPausedSet(false);
     }
 
     // =========================================

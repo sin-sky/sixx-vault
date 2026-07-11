@@ -2,6 +2,7 @@
 pragma solidity ^0.8.28;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {VmSafe} from "forge-std/Vm.sol";
 import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {PendlePTAdapter} from "../src/adapters/PendlePTAdapter.sol";
@@ -32,6 +33,18 @@ contract DeployPendleAdapter is Script {
     uint32  constant TWAP     = 900;
 
     function run() external {
+        // L-01: DRY-RUN SIMULATION ONLY. Unlike the production Deploy.s.sol /
+        //   DeployEthenaAdapter.s.sol, this script does NOT instantiate a TimelockController
+        //   and wires governance/feeRecipient/guardian to a bare EOA (msg.sender/env). It must
+        //   therefore never broadcast. Hard-revert under --broadcast / --resume so an executable
+        //   copy in the handoff bundle can't deploy live governance to a non-Timelock address.
+        //   To actually ship this vault, port the Timelock + Safe wiring from the core scripts.
+        require(
+            !vm.isContext(VmSafe.ForgeContext.ScriptBroadcast) &&
+            !vm.isContext(VmSafe.ForgeContext.ScriptResume),
+            "DEPLOY: broadcast forbidden (dry-run sim only; port Timelock+Safe wiring first)"
+        );
+
         address governance = vm.envOr("PENDLE_GOVERNANCE", msg.sender);
         address swapper    = vm.envOr("PENDLE_STABLE_SWAPPER", address(0xDEAD)); // placeholder for sim
         address feeRcpt    = governance;

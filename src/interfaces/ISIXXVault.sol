@@ -73,6 +73,14 @@ interface ISIXXVault is IERC4626 {
     /// @dev When active: new deposits blocked, all assets recalled from adapter
     function setEmergencyShutdown(bool active) external;
 
+    /// @notice M-03: whether deposits are paused after a lossy force-detach (writeoff),
+    ///         pending governance re-open. Withdrawals stay open while this is true.
+    function depositsPaused() external view returns (bool);
+
+    /// @notice M-03: governance re-opens deposits after a lossy force-detach while the
+    ///         strategy remains idle. Attaching a healthy adapter also re-opens them.
+    function reopenDeposits() external;
+
     // =========================================
     // Governance (2-step transfer)
     // =========================================
@@ -124,4 +132,7 @@ interface ISIXXVault is IERC4626 {
     /// @dev ADR-007 #2: Emitted on harvest when realized profit is locked for linear release.
     ///      `newProfit` is realized this call; `totalLocked` is the resulting locked balance.
     event ProfitLocked(uint256 newProfit, uint256 totalLocked);
+    /// @dev M-03: Emitted when the deposit pause is toggled. Set true by a lossy
+    ///      force-detach (NAV writeoff); cleared by a healthy reattach or reopenDeposits().
+    event DepositsPausedSet(bool paused);
 }

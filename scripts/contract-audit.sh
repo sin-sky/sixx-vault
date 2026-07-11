@@ -101,6 +101,24 @@ fi
 solc --version 2>&1 | tail -1 || true
 forge --version 2>&1 | head -1 || true
 
+# ─── Stage 0b: on-chain guard regression (safety mechanism) ───
+# Presses the smoke-detector's test button every run: proves the PreToolUse guard still
+# BLOCKS cast send / forge script --broadcast (exit 2) via the real stdin JSON payload
+# (and legacy env), so the on-chain block can't silently break again. Pure bash — no forge.
+banner "Stage 0b — on-chain guard regression"
+GUARD_TEST="$REPO_ROOT/.claude/hooks/guard-dangerous.test.sh"
+if [ -f "$GUARD_TEST" ]; then
+  if bash "$GUARD_TEST" > "$REPORTS/guard.log" 2>&1; then
+    record "guard" "PASS" "cast send/broadcast blocked; benign allowed (stdin+env+schema canary)"
+  else
+    record "guard" "FAIL" "(on-chain guard broken — see reports/guard.log)"
+    tail -20 "$REPORTS/guard.log"
+  fi
+else
+  # No .claude/ (e.g. the standalone audit handoff bundle) — harness-local guard not present.
+  record "guard" "SKIP" "(.claude/hooks/guard-dangerous.test.sh not present — harness-local)"
+fi
+
 # ─── Stage 1: build ───────────────────────────────────────────
 banner "Stage 1 — forge build"
 if forge build > "$REPORTS/build.log" 2>&1; then

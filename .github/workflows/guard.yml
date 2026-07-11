@@ -1,0 +1,29 @@
+# On-chain danger guard — regression CI.
+# Pure bash, forge-independent (unaffected by the unstable cloud forge/osaka env), so the
+# safety mechanism is checked on every push/PR cheaply and reliably. Fails the workflow if
+# the PreToolUse guard ever stops blocking `cast send` / `forge script --broadcast`, or if
+# the test fixture drifts from the documented Claude Code PreToolUse payload schema.
+name: On-chain Guard Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  onchain-guard:
+    name: on-chain danger guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify settings.json still denies on-chain sends/deploys
+        run: |
+          grep -q 'Bash(cast send:\*)' .claude/settings.json \
+            && grep -q 'Bash(forge script:\* --broadcast\*)' .claude/settings.json \
+            || { echo "::error::permissions.deny lost the on-chain block rules"; exit 1; }
+          grep -q 'guard-dangerous.sh' .claude/settings.json \
+            || { echo "::error::PreToolUse guard hook not wired in settings.json"; exit 1; }
+      - name: Run guard regression test (block cast send / --broadcast; schema canary)
+        run: bash .claude/hooks/guard-dangerous.test.sh

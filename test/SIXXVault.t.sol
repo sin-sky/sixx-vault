@@ -665,15 +665,21 @@ contract SIXXVaultTest is Test {
     // Additional mutation-kill regression guards (audit/MUTATION_TRIAGE.md)
     // ─────────────────────────────────────────────────────────
 
-    /// @notice setPerformanceFee enforces the hard cap MAX_PERFORMANCE_FEE (3000 bps).
-    ///         Kills the RequireMutation that weakens `newFee <= MAX_PERFORMANCE_FEE` to `true`.
-    function test_setPerformanceFee_enforcesCap() public {
+    /// @notice Part B P4: performance-fee accrual is not implemented, so setting any
+    ///         nonzero rate must revert; setting 0 stays a harmless no-op. Kills the
+    ///         RequireMutation that would weaken `newFee == 0` to `true`.
+    function test_setPerformanceFee_notImplemented_rejectsNonzero() public {
         vm.prank(governance);
-        vault.setPerformanceFee(3000); // exactly the cap — allowed
+        vault.setPerformanceFee(0); // no-op — allowed
+        assertEq(vault.performanceFee(), 0);
 
         vm.prank(governance);
-        vm.expectRevert(bytes("VAULT: fee too high"));
-        vault.setPerformanceFee(3001); // one over the cap — must revert
+        vm.expectRevert(bytes("VAULT: performance fee not implemented"));
+        vault.setPerformanceFee(1); // any nonzero rate — must revert
+
+        vm.prank(governance);
+        vm.expectRevert(bytes("VAULT: performance fee not implemented"));
+        vault.setPerformanceFee(3000);
     }
 
     /// @notice _totalDebt bookkeeping is decremented when funds are recalled from the adapter.

@@ -111,11 +111,13 @@ contract AdapterRegistry is IAdapterRegistry {
 
     function proposeGovernance(address newGovernance) external onlyGovernance {
         require(newGovernance != address(0), "REGISTRY: zero address");
+        emit GovernanceProposed(governance, newGovernance); // Part B P2: observability
         pendingGovernance = newGovernance;
     }
 
     function acceptGovernance() external {
         require(msg.sender == pendingGovernance, "REGISTRY: not pending");
+        emit GovernanceAccepted(pendingGovernance); // Part B P2: observability
         governance = pendingGovernance;
         pendingGovernance = address(0);
     }

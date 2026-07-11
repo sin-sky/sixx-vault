@@ -159,7 +159,7 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         require(pendleRouter_ != address(0), "ADAPTER: zero router");
         require(ptOracle_     != address(0), "ADAPTER: zero oracle");
         require(swapper_      != address(0), "ADAPTER: zero swapper");
-        require(twapDuration_ > 0,           "ADAPTER: zero twap");
+        require(twapDuration_ >= 900,        "ADAPTER: twap < 15min"); // Part B P3 (OR2): min 15-min TWAP
         require(vault_        != address(0), "ADAPTER: zero vault");
         require(governance_   != address(0), "ADAPTER: zero governance");
 

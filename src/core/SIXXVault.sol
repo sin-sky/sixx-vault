@@ -26,7 +26,6 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     uint256 private constant MAX_BPS = 10_000;
     /// @dev ~365.25 days in seconds
     uint256 private constant SECS_PER_YEAR = 365 days + 6 hours;
-    uint256 private constant MAX_PERFORMANCE_FEE = 3_000; // 30% hard cap
     uint256 private constant MAX_MANAGEMENT_FEE = 500;    // 5% hard cap
     /// @dev ADR-007 #2: window over which harvested profit unlocks linearly (JIT defense).
     uint256 private constant PROFIT_UNLOCK_PERIOD = 8 hours;
@@ -108,12 +107,18 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         _collectFees(); // ADR-007 #3: crystallize before conversion
-        return super.deposit(assets, receiver);
+        uint256 shares = super.deposit(assets, receiver);
+        // Part B P1 (RD5): reject a deposit that rounds to zero shares so assets are
+        // never taken for nothing (OZ v5 ERC-4626 has no such guard). Self-inflicted
+        // dust only, but made an explicit revert for cleanliness.
+        require(shares > 0, "VAULT: zero shares");
+        return shares;
     }
 
     function mint(uint256 shares, address receiver)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
+        require(shares > 0, "VAULT: zero shares"); // Part B P1 (RD5): symmetric guard
         _collectFees();
         return super.mint(shares, receiver);
     }
@@ -387,14 +392,19 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     // Governance: Fees
     // =========================================
 
+    /// @dev Part B P4: performance-fee accrual is NOT implemented — only the
+    ///      management fee is ever collected. Reject any attempt to enable a nonzero
+    ///      rate so the dead field can never silently take effect. Setting 0 is a
+    ///      harmless no-op (kept callable so tooling/harnesses can normalize state).
     function setPerformanceFee(uint256 newFee) external onlyGovernance {
-        require(newFee <= MAX_PERFORMANCE_FEE, "VAULT: fee too high");
-        performanceFee = newFee;
+        require(newFee == 0, "VAULT: performance fee not implemented");
+        performanceFee = newFee; // always 0
     }
 
     function setManagementFee(uint256 newFee) external onlyGovernance {
         _collectFees(); // ADR-007 #3: crystallize at the old rate before changing (no retroactive fee)
         require(newFee <= MAX_MANAGEMENT_FEE, "VAULT: fee too high");
+        emit ManagementFeeUpdated(managementFee, newFee); // Part B P2: observability
         managementFee = newFee;
     }
 

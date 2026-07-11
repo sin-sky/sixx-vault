@@ -43,4 +43,7 @@ interface IAdapterRegistry {
     /// @dev M-5: emitted on both disable and re-enable; `active` carries
     ///      the new state.
     event AdapterStatusUpdated(address indexed adapter, bool active);
+    /// @dev Part B P2: governance-transfer observability (2-step).
+    event GovernanceProposed(address indexed current, address indexed pending);
+    event GovernanceAccepted(address indexed newGovernance);
 }

@@ -103,6 +103,8 @@ interface ISIXXVault is IERC4626 {
     event LockPeriodUpdated(uint256 oldPeriod, uint256 newPeriod);
     event EmergencyShutdown(bool active);
     event FeeCollected(address indexed recipient, uint256 feeShares, uint256 feeAssets);
+    /// @dev Part B P2: emitted when governance changes the management-fee rate.
+    event ManagementFeeUpdated(uint256 oldFee, uint256 newFee);
     event GovernanceProposed(address indexed currentGovernance, address indexed pendingGovernance);
     event GovernanceAccepted(address indexed newGovernance);
     event GuardianChanged(address indexed oldGuardian, address indexed newGuardian);

@@ -285,16 +285,11 @@ contract ThreatCouncilRemainingTest is Test {
         _assertSolvent();
     }
 
-    /// RD5 [KNOWN-ISSUE / LOW]: a nonzero deposit that rounds to ZERO shares still
-    ///      transfers the assets (OZ v5 ERC-4626 has no `shares > 0` guard). This PoC
-    ///      pins the exact, bounded behavior so the reviewer sees it green:
-    ///        - the loss is self-inflicted dust, capped at the deposited `tiny` amount
-    ///          (< one share's worth), NOT extractable by a third party;
-    ///        - it DONATES to the pool, so the vault stays solvent (never insolvent);
-    ///        - no other holder is harmed.
-    ///      Surfaced to Part B (audit/REMEDIATION_PROPOSALS.md, RD5) as an optional
-    ///      `require(shares > 0)` hardening — informational, not a fund-loss risk.
-    function test_RD5_zeroShareDeposit_isBoundedSelfInflictedDust() public {
+    /// RD5 [FIXED — Part B P1]: a nonzero deposit that rounds to ZERO shares now
+    ///      reverts (`VAULT: zero shares`) instead of silently taking dust assets for
+    ///      0 shares. Proves the guard added to SIXXVault.deposit and that bob is not
+    ///      charged. (Pre-fix: OZ v5 ERC-4626 took the dust — see REMEDIATION_PROPOSALS P1.)
+    function test_RD5_zeroShareDeposit_nowReverts() public {
         // Drive price-per-share high enough that a 1-wei deposit truncates to 0 shares.
         _deposit(alice, 1);                              // 1 wei seed
         vm.prank(attacker);
@@ -303,27 +298,15 @@ contract ThreatCouncilRemainingTest is Test {
         uint256 tiny = 1; // 1 wei USDC
         assertEq(vault.previewDeposit(tiny), 0, "setup: expected a zero-share deposit");
 
-        // A pre-existing honest holder must not be harmed by bob's dust deposit.
-        uint256 aliceClaimBefore = vault.previewRedeem(vault.balanceOf(alice));
-
         vm.startPrank(bob);
         usdc.approve(address(vault), tiny);
         uint256 balBefore = usdc.balanceOf(bob);
-        uint256 got = vault.deposit(tiny, bob);
-        uint256 spent = balBefore - usdc.balanceOf(bob);
+        vm.expectRevert("VAULT: zero shares");
+        vault.deposit(tiny, bob);
         vm.stopPrank();
 
-        // Documented behavior: 0 shares minted, at most `tiny` wei of self-inflicted dust.
-        assertEq(got, 0, "expected zero shares for this dust deposit");
+        assertEq(usdc.balanceOf(bob), balBefore, "reverted but funds moved");
         assertEq(vault.balanceOf(bob), 0, "bob holds no shares");
-        assertLe(spent, tiny, "loss exceeds the deposited dust");
-
-        // Safety envelope: no third-party theft, no insolvency, no harm to others.
-        assertGe(
-            vault.previewRedeem(vault.balanceOf(alice)),
-            aliceClaimBefore,
-            "another holder's claim was reduced"
-        );
         _assertSolvent();
     }
 

@@ -5,6 +5,7 @@
 #   forge/cast/anvil -> build/test/coverage/invariant/fork
 #   slither          -> Stage 6 (hard gate)
 #   solc-select/solc -> Stage 0 pin (0.8.28)
+#   crytic-compile   -> echidna's compile backend (must be on PATH)
 #   echidna          -> Stage 5 (property fuzzing)
 #   aderyn           -> Stage 7 (static analysis)
 #   gambit           -> Stage 8 (mutation, scripts/mutation-test.sh)
@@ -17,6 +18,9 @@ ARG SLITHER_VERSION=0.11.5
 ARG SOLC_SELECT_VERSION=1.2.0
 ARG SOLC_VERSION=0.8.28
 ARG HALMOS_VERSION=0.3.3
+# crytic-compile is echidna's compilation backend; it ships as a slither dep but
+# its CLI entrypoint must be on PATH or echidna FAILs to compile the target.
+ARG CRYTIC_COMPILE_VERSION=0.3.11
 ARG ADERYN_VERSION=0.6.8
 ARG ECHIDNA_VERSION=2.3.2
 ARG GAMBIT_VERSION=1.0.6
@@ -38,16 +42,19 @@ RUN python3 -m venv /opt/audit-venv \
     && /opt/audit-venv/bin/pip install --no-cache-dir \
          "slither-analyzer==${SLITHER_VERSION}" \
          "solc-select==${SOLC_SELECT_VERSION}" \
+         "crytic-compile==${CRYTIC_COMPILE_VERSION}" \
          "halmos==${HALMOS_VERSION}" \
-    && for b in slither solc-select solc halmos; do \
+    && for b in slither solc-select solc crytic-compile halmos; do \
          ln -sf /opt/audit-venv/bin/$b /usr/local/bin/$b; \
        done
 
-# ─── solc pinned to 0.8.28 (shared install dir, world-readable) ───
+# ─── solc pinned to 0.8.28 (shared install dir; world-writable so postCreate can re-pin) ───
+# a+rwX (not just a+rX) lets the runtime user re-run `solc-select use 0.8.28`, so the
+# 0.8.28 global-version always wins over any 0.8.36 default (fixes verify MISMATCH).
 RUN mkdir -p "${SOLC_SELECT_INSTALL_DIR}" \
     && solc-select install "${SOLC_VERSION}" \
     && solc-select use "${SOLC_VERSION}" \
-    && chmod -R a+rX "${SOLC_SELECT_INSTALL_DIR}"
+    && chmod -R a+rwX "${SOLC_SELECT_INSTALL_DIR}"
 
 # ─── Foundry pinned to v1.7.1 (matches local forge 1.7.1) ───
 RUN curl -L https://foundry.paradigm.xyz | bash \

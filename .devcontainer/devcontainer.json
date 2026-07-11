@@ -9,7 +9,7 @@
     "PATH": "/opt/foundry/bin:/usr/local/bin:${containerEnv:PATH}",
     "FOUNDRY_EVM_VERSION": "cancun"
   },
-  "postCreateCommand": "git submodule update --init --recursive && bash ./scripts/verify-audit-toolchain.sh || true",
+  "postCreateCommand": "solc-select install 0.8.28 && solc-select use 0.8.28 && git submodule update --init --recursive && bash ./scripts/verify-audit-toolchain.sh || true",
   "customizations": {
     "vscode": {
       "extensions": [

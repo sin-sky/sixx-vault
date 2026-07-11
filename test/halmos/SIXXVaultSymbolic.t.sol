@@ -71,4 +71,22 @@ contract SIXXVaultSymbolic is SymTest, Test {
         // holds exactly `amount` ⇒ totalAssets == amount (value conservation, no creation).
         assertEq(vault.totalAssets(), amount);
     }
+
+    /// @notice DINV-2 / DINV-4 (symbolic): a solo depositor can NEVER redeem more than they
+    ///         deposited — the share↔asset round-trip is always vault-favorable, proven for
+    ///         ALL amounts in range (not sampled). Exercises the nonlinear share mulDiv with
+    ///         the virtual-shares offset (9); the solver stays tractable on a single deposit.
+    function check_redeemNeverExceedsDeposit(uint256 amount) public {
+        vm.assume(amount > 0);
+        vm.assume(amount <= 1_000_000e6);
+
+        usdc.mint(alice, amount);
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        uint256 got = vault.redeem(shares, alice, alice);
+        vm.stopPrank();
+
+        assertLe(got, amount);
+    }
 }

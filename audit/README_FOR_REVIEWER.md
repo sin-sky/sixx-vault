@@ -17,14 +17,15 @@ ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で
 | 項目 | 値 |
 |---|---|
 | repo | `github.com/sin-sky/sixx-vault` |
-| **監査対象コード凍結（Round 2・最終ハードニング形）** | **`b939dd2`**（ADR-007 ①②③実装済＝liveness / profit-streaming / fee-crystallize） |
-| 本ハンドオフ束 | `b939dd2` 近傍 HEAD。zip 名の末尾 shorthash＝バンドル生成コミット |
+| **監査対象コード凍結（Round 3・最終ハードニング形）** | **`173e3fb`**（ADR-007 ①②③＝liveness / profit-streaming / fee-crystallize ＋ threat-council remaining Part B P1-P4） |
+| 前 Round | `b939dd2`（Round 2・ADR-007 ①②③） |
+| 本ハンドオフ束 | `173e3fb` 近傍 HEAD。zip 名の末尾 shorthash＝バンドル生成コミット |
 | solc | **0.8.28** |
 | Foundry | forge **1.7.1** |
 | OpenZeppelin | **v5.6.1**（`lib/openzeppelin-contracts`） |
 | forge-std | **v1.16.1**（`lib/forge-std`） |
 
-> 以降の変更は監査ベンダーと合意の上で。本ハンドオフ zip は `3917de7` の内容を同梱。
+> 以降の変更は監査ベンダーと合意の上で。本ハンドオフ zip は凍結 `173e3fb` の内容を同梱。
 
 ---
 

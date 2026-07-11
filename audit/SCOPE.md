@@ -1,13 +1,14 @@
 # SIXX Vault — 監査スコープ（SCOPE）
 
-> 外部監査／専門レビュー用。**凍結コミット `3917de7`**（`main`）。solc 0.8.28。
+> 外部監査／専門レビュー用。**凍結コミット `173e3fb`**（`main`・Round 3 最終ハードニング＝ADR-007 ①②③＋Part B P1-P4 反映済）。solc 0.8.28。
+> （履歴：Round 2 `b939dd2` → 本 Round 3 で threat-council remaining ②③④⑦⑧ の Part B P1-P4 を反映。詳細＝`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
 > 補完文書：入口＝`audit/README_FOR_REVIEWER.md`／既知FP＝`audit/SLITHER_TRIAGE.md`＋`AUDIT_PACKAGE.md §Slither`／等価変異＝`audit/MUTATION_TRIAGE.md`／自前ハードニング＝`PRE_AUDIT_HARDENING.md`。
 
 ---
 
 ## 1. In-Scope（自前 Solidity＝監査対象）
 
-実測 LoC（`3917de7`・`wc -l`）。**合計 2,763 行 / 16 ファイル**。
+実測 LoC（`173e3fb`・`wc -l`）。**合計 2,898 行 / 16 ファイル**。
 
 ### 1.1 コア（会計・ガバナンス）
 | ファイル | LoC | 役割 |

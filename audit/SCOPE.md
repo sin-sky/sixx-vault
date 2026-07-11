@@ -1,19 +1,19 @@
 # SIXX Vault — 監査スコープ（SCOPE）
 
-> 外部監査／専門レビュー用。**凍結コミット `173e3fb`**（`main`・Round 3 最終ハードニング＝ADR-007 ①②③＋Part B P1-P4 反映済）。solc 0.8.28。
-> （履歴：Round 2 `b939dd2` → 本 Round 3 で threat-council remaining ②③④⑦⑧ の Part B P1-P4 を反映。詳細＝`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
+> 外部監査／専門レビュー用。**凍結コミット `78aa8c1`**（`main`・Round 4＝独立 Handoff 監査 M-01〜M-05／L-01 remediation 反映済）。solc 0.8.28。
+> （履歴：Round 2 `b939dd2` → Round 3 `173e3fb`（threat-council remaining ②③④⑦⑧ の Part B P1-P4）→ 本 Round 4 `78aa8c1`（独立 Handoff 監査 remediation）。詳細＝`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
 > 補完文書：入口＝`audit/README_FOR_REVIEWER.md`／既知FP＝`audit/SLITHER_TRIAGE.md`＋`AUDIT_PACKAGE.md §Slither`／等価変異＝`audit/MUTATION_TRIAGE.md`／自前ハードニング＝`PRE_AUDIT_HARDENING.md`。
 
 ---
 
 ## 1. In-Scope（自前 Solidity＝監査対象）
 
-実測 LoC（`173e3fb`・`wc -l`）。**合計 2,898 行 / 16 ファイル**。
+実測 LoC（`78aa8c1`・`wc -l`）。**合計 2,990 行 / 16 ファイル**（Round 3 比 +92：SIXXVault +63・PendlePTAdapter +18・ISIXXVault +11＝Handoff remediation）。
 
 ### 1.1 コア（会計・ガバナンス）
 | ファイル | LoC | 役割 |
 |---|---:|---|
-| `src/core/SIXXVault.sol` | 454 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance |
+| `src/core/SIXXVault.sol` | 606 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03) |
 | `src/core/AdapterRegistry.sol` | 122 | ガバナンス whitelist（`isActive`/`registerAdapter`） |
 
 ### 1.2 アダプター（各外部プロトコル連携）
@@ -22,12 +22,12 @@
 | `src/adapters/AaveV3USDCAdapter.sol` | 277 | Aave V3 Pool（USDC・Arbitrum） |
 | `src/adapters/VenusUSDTAdapter.sol` | 288 | Venus vToken（USDT・BNB） |
 | `src/adapters/EthenaSUSDeAdapter.sol` | 431 | Ethena `StakedUSDeV2` ＋ Curve StableSwap-NG（USDC↔USDe↔sUSDe↔crvUSD） |
-| `src/adapters/PendlePTAdapter.sol` | 572 | Pendle Router V4 ＋ 注入 `IStableSwapper`（USDC↔USDe / sUSDe→USDC） |
+| `src/adapters/PendlePTAdapter.sol` | 590 | Pendle Router V4 ＋ 注入 `IStableSwapper`（USDC↔USDe / sUSDe→USDC）。deposit/withdraw は実残高デルタ検算（M-04/M-05） |
 
 ### 1.3 インターフェース（自前宣言）
 | 区分 | ファイル（LoC） |
 |---|---|
-| 自前コントラクトの IF | `IStrategyAdapter`(80) / `ISIXXVault`(103) / `IAdapterRegistry`(46) |
+| 自前コントラクトの IF | `IStrategyAdapter`(80) / `ISIXXVault`(138) / `IAdapterRegistry`(49) |
 | 外部 ABI の自前ヘッダ | `IAavePool`(54) / `IVenusVToken`(47) / `IPendleRouter`(140) / `IPendleCore`(70) / `IStakedUSDeV2`(29) / `ICurveStableSwapNG`(23) / `IStableSwapper`(27) |
 
 > 外部 ABI ヘッダ自体は自前コード＝**宣言の正しさ（selector/戻り値型/デコード）は in-scope**。指す先の実装は out-of-scope（§2）。

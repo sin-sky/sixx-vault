@@ -41,6 +41,33 @@ cp "$TARGET" "$BACKUP"
 restore() { cp "$BACKUP" "$TARGET"; rm -f "$BACKUP"; }
 trap restore EXIT INT TERM
 
+# ─── Pre-flight canary (S0-3, 2026-07-12): the classifier invocation MUST be sound ───
+# Root-cause fix for the `--match-contract '*'` false-kill class. The per-mutant classifier
+# is "did `forge test <filters>` pass?". If that invocation is broken, every mutant is
+# mis-classified and the score is fiction:
+#   • a regex error (e.g. MUTATION_MATCH='*') makes forge exit non-zero  → every mutant
+#     looks KILLED (false ~100%);
+#   • a 0-match filter makes forge exit 0 having run NO tests             → every mutant
+#     looks SURVIVED (false ~0%).
+# Verify BOTH on the UNMUTATED source before spending time on mutants: (a) the exact
+# invocation exits 0, AND (b) it actually ran > 0 tests. Abort (exit 4) if not — refuse to
+# emit fake numbers. NOT run with -q, so the "N tests passed" summary is parseable.
+echo "==> Pre-flight: verifying the classifier invocation on UNMUTATED source…"
+PF="$REPORTS/preflight.log"
+if ! forge test --no-match-contract "Fork" ${MUTATION_MATCH:+--match-contract "$MUTATION_MATCH"} > "$PF" 2>&1; then
+  echo "PREFLIGHT FAIL: the suite invocation does NOT pass on the unmutated source."
+  echo "  A broken invocation (e.g. MUTATION_MATCH='*' regex error) mis-classifies every"
+  echo "  mutant as killed (false ~100%). Fix the invocation — refusing to produce fake numbers."
+  tail -20 "$PF"; exit 4
+fi
+PF_PASSED="$(grep -oE "[0-9]+ tests? passed" "$PF" | grep -oE "^[0-9]+" | tail -1)"
+if [ -z "$PF_PASSED" ] || [ "$PF_PASSED" -eq 0 ]; then
+  echo "PREFLIGHT FAIL: the invocation ran 0 tests (0-match filter / silent pass)."
+  echo "  Every mutant would falsely 'survive'. Fix MUTATION_MATCH — refusing to produce fake numbers."
+  tail -20 "$PF"; exit 4
+fi
+echo "==> Pre-flight OK: unmutated source passes with $PF_PASSED tests — classifier invocation is sound."
+
 echo "==> Generating mutants for $TARGET (N=$N, seed=$SEED)"
 rm -rf "$OUTDIR"
 REMAP1="@openzeppelin/=lib/openzeppelin-contracts/"

@@ -133,7 +133,42 @@ else
   record "guard" "SKIP" "(.claude/hooks/guard-dangerous.test.sh not present — harness-local)"
 fi
 
+# ─── Stage 0c: measurement-tooling regression (S0-3) ──────────
+# Presses the test button on the MEASURING instruments: proves (a) clean-tree-guard FAILS
+# on a dirty/mutated tree and PASSES clean, and (b) mutation-test.sh ABORTS on a broken
+# classifier invocation (regex crash / 0-match) instead of faking the score. Blocks a 3rd
+# recurrence of the false-kill / analysis-contamination classes. Pure bash (fake forge).
+banner "Stage 0c — measurement-tooling regression (mutation false-kill + tree contamination)"
+MEAS_TEST="$REPO_ROOT/scripts/measurement-guard.test.sh"
+if [ -f "$MEAS_TEST" ]; then
+  if bash "$MEAS_TEST" > "$REPORTS/measurement-guard.log" 2>&1; then
+    record "measurement-guard" "PASS" "clean-tree + mutation-canary regressions green"
+  else
+    record "measurement-guard" "FAIL" "(a measurement guard regressed — see reports/measurement-guard.log)"
+    tail -30 "$REPORTS/measurement-guard.log"
+  fi
+else
+  record "measurement-guard" "SKIP" "(scripts/measurement-guard.test.sh not present)"
+fi
+
+# ─── Stage 0a: clean-tree guard (analysis-contamination prevention) ───
+# S0-2 (2026-07-12): NEVER run build/tests/static-analysis on a tree that still has a
+# Gambit mutant swapped into src/ or leftover mutation artifacts (gambit_out/, mutants/).
+# A mutated contract makes Slither/Aderyn/forge analyse code that is NOT the committed
+# source, silently corrupting every finding. This is a HARD gate: exit != 0 → FAIL, and
+# we refuse to proceed. Not swallowed (no `|| true`).
+banner "Stage 0a — clean-tree guard (no dirty src / mutation artifacts before analysis)"
+if bash "$REPO_ROOT/scripts/clean-tree-guard.sh" > "$REPORTS/clean-tree.log" 2>&1; then
+  record "clean-tree" "PASS" "src/ matches committed source; no mutation artifacts"
+else
+  record "clean-tree" "FAIL" "(contaminated tree — refusing to analyse; see reports/clean-tree.log)"
+  cat "$REPORTS/clean-tree.log"
+  echo "Clean-tree guard tripped — commit/stash src changes and remove gambit_out/ (mutants), then re-run."
+fi
+
 # ─── Stage 1: build ───────────────────────────────────────────
+# Gated on FAILED so a tripped clean-tree guard (Stage 0a) aborts BEFORE build/analysis.
+if [ "$FAILED" = "0" ]; then
 banner "Stage 1 — forge build"
 if forge build > "$REPORTS/build.log" 2>&1; then
   record "build" "PASS" ""
@@ -142,6 +177,7 @@ else
   echo "Build failed — aborting remaining stages."
   tail -20 "$REPORTS/build.log"
   # write summary and exit
+fi
 fi
 
 # Only continue if build passed

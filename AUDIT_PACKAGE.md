@@ -1,14 +1,16 @@
 # SIXX Vault — 外部監査パッケージ（ベンダー向け入口）
 
-> ## 🔒 ROUND 2（最終ハードニング形・2026-07-11）— 現行の凍結
-> **凍結コミット（監査対象）＝`b939dd2`（branch `main`）。** ①②③（ADR-007）実装済＝vault ハードニング一巡。
-> - **入口1枚＝`audit/README_FOR_REVIEWER.md`**（build/test 手順・重点箇所・既知FP/等価変異）。スコープは `audit/SCOPE.md`（自前 .sol 実測 LoC）。
-> - **本ラウンドの契約変更（ADR-007 #1/#2/#3）**：①退出 liveness（force-detach try/catch＋totalAssets 耐障害化＋Ethena governance slippage setter）／②profit-streaming（locked-profit degradation＝構造的 JIT 防御）／③fee crystallize-on-interaction（後入者非希薄化）。設計＝workspace `ADR-007`、脅威分析＝`audit/THREAT_COUNCIL_2026-07-11.md`。
-> - **テスト**：非fork **154 pass**・SIXXVault カバレッジ **95.74%**・invariant 5／Echidna 3／Halmos pilot 1・**mutation 100%**（※旧・会計コア限定サンプル run の実効値＝`audit/MUTATION_TRIAGE.md`。**現行 headline は `960b707` フル 1,090-mutant run＝94.6%**）・Slither 差分ゲート green（`slither-b939dd2.json`／`audit/SLITHER_TRIAGE.md`／`audit/slither-baseline.json`）。フォークは要 RPC（Codespace 実走）。
-> - **スコープ**：SIXXVault / AdapterRegistry ＋ 4アダプター（Aave/Venus/Ethena/Pendle）＋ interface（`audit/SCOPE.md` 2,763行/16ファイル）。④permit forwarder は**別ラウンド**（vault は非カストディ・無欠陥。keeper/frontend/custody-auditor 管轄）。
-> - **④以外は本ラウンドで確定**。以降の変更は監査ベンダー合意の上で。
+> ## 🔒 現行の凍結・テスト統計・スコープ — 正本を参照（単一ソース化＝陳腐化の構造的防止）
+> **本パッケージは歴史的索引です。ライブな数値（凍結コミット／テスト統計／カバレッジ／スコープ LoC）は
+> 意図的にここへ持たせません**（数値の二重管理をなくし、パッケージ側の陳腐化を構造的に防ぐため）。
+> 現行値は常に次の**正本**を参照してください：
+> - **入口1枚・build/test 手順・重点箇所・既知FP／等価変異・最新テスト統計（非fork pass 数・cov・invariant・Echidna・mutation）** ＝ **`audit/README_FOR_REVIEWER.md`（正本）**
+> - **in/out スコープ・実測 LoC・現行の凍結コミット** ＝ **`audit/SCOPE.md`（正本）**
+> - 脅威分析＝`audit/THREAT_COUNCIL_2026-07-11.md` ほか、設計＝workspace `ADR-007`。
+> - 本ラウンドの契約変更（ADR-007 #1/#2/#3）：①退出 liveness（force-detach try/catch＋totalAssets 耐障害化＋Ethena slippage setter）／②profit-streaming（locked-profit degradation＝構造的 JIT 防御）／③fee crystallize-on-interaction（後入者非希薄化）。
 >
-> ⚠️ 以下（§1〜）は **ROUND 1（2026-07-09・凍結 `3d55dc5`・USD 系4コア・92 pass）の歴史的記録**。数値/スコープは Round 2 で上記に更新済み。
+> ⚠️ 以下（§1〜）は **ROUND 1（2026-07-09・凍結 `3d55dc5`・USD 系4コア）作成時の歴史的記録**。当時の
+> 数値・スコープ（例：92 pass／1,471 LoC／4コア）を含みますが、**いずれも現行値ではありません**（現行は上記の正本を参照）。
 
 ---
 

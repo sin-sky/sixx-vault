@@ -4,7 +4,7 @@
 > **凍結コミット（監査対象）＝`b939dd2`（branch `main`）。** ①②③（ADR-007）実装済＝vault ハードニング一巡。
 > - **入口1枚＝`audit/README_FOR_REVIEWER.md`**（build/test 手順・重点箇所・既知FP/等価変異）。スコープは `audit/SCOPE.md`（自前 .sol 実測 LoC）。
 > - **本ラウンドの契約変更（ADR-007 #1/#2/#3）**：①退出 liveness（force-detach try/catch＋totalAssets 耐障害化＋Ethena governance slippage setter）／②profit-streaming（locked-profit degradation＝構造的 JIT 防御）／③fee crystallize-on-interaction（後入者非希薄化）。設計＝workspace `ADR-007`、脅威分析＝`audit/THREAT_COUNCIL_2026-07-11.md`。
-> - **テスト**：非fork **154 pass**・SIXXVault カバレッジ **95.74%**・invariant 5／Echidna 3／Halmos pilot 1・**mutation 100%**（`audit/MUTATION_TRIAGE.md`）・Slither 差分ゲート green（`slither-b939dd2.json`／`audit/SLITHER_TRIAGE.md`／`audit/slither-baseline.json`）。フォークは要 RPC（Codespace 実走）。
+> - **テスト**：非fork **154 pass**・SIXXVault カバレッジ **95.74%**・invariant 5／Echidna 3／Halmos pilot 1・**mutation 100%**（※旧・会計コア限定サンプル run の実効値＝`audit/MUTATION_TRIAGE.md`。**現行 headline は `960b707` フル 1,090-mutant run＝94.6%**）・Slither 差分ゲート green（`slither-b939dd2.json`／`audit/SLITHER_TRIAGE.md`／`audit/slither-baseline.json`）。フォークは要 RPC（Codespace 実走）。
 > - **スコープ**：SIXXVault / AdapterRegistry ＋ 4アダプター（Aave/Venus/Ethena/Pendle）＋ interface（`audit/SCOPE.md` 2,763行/16ファイル）。④permit forwarder は**別ラウンド**（vault は非カストディ・無欠陥。keeper/frontend/custody-auditor 管轄）。
 > - **④以外は本ラウンドで確定**。以降の変更は監査ベンダー合意の上で。
 >

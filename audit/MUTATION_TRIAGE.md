@@ -1,5 +1,14 @@
 # Mutation Testing Triage — SIXX Vault 会計コア
 
+> ## ⚠️ スコープ注記（2026-07-12 更新 — 必読）
+> **本トリアージは旧・60 サンプル × 会計コア限定 run（seed=0 / N=60）の逐条記録**です。以下に出てくる
+> `raw 96.7%` ／ `実効 100%` ／ `60/60 killed・100%・生存0` は**すべて当時の 60 サンプル値**であり、
+> **現行の headline mutation score ではありません。**
+> **最新 headline ＝ 凍結 `960b707` でのフル 1,090-mutant run（seed=0, ダウンサンプルなし）＝ score 94.6%（killed 1031 / survived 59）。**
+> 生存 59 はいずれも設計上の等価変異（`_totalDebt`／`performanceFee` 等）＋低 severity の negative/telemetry
+> テスト欠落で、安全性 invariant は非破壊。以下の 60 サンプル逐条（EQ-1/EQ-2 等）は**等価変異クラスの参照**
+> として引き続き有効です。
+
 > ADR-006 Phase 1（多層防御・無料自動化層）。`src/core/SIXXVault.sol` に対する Gambit 変異テストの
 > **生存ミュータント逐条トリアージ**。将来 `survived` を見たとき、ここに載る **既知の等価変異**か
 > **新規の test gap**かを区別するための正典。

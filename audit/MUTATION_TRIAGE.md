@@ -125,3 +125,52 @@ setManagementFee 冒頭で crystallize。N=60 サンプルの生存を kill：
   `test_setAdapter_migration_balanceDelta_excludesIdle`（vault に idle donation＋shorting adapter で revert 検証）
 
 **最終＝60/60 killed・100%・生存0。**
+
+---
+
+## 追補（2026-07-12・Round 7 差分敵対的リパス — 差分行スコープ mutation）
+
+対象 = `2e8f059..9fa9796` の src 差分行のみ（Gambit で変更ファイル全 mutant 生成→変更行フィルタ）。
+**実**フル非fork スイート（`forge test --no-match-contract Fork`、フィルタ無し）で kill 判定。
+
+> ⚠️ 方法論の訂正: 初回リパスで `--match-contract '*'` を使ったが `*` は正規表現エラーで
+> `forge test` が異常終了し、**全 mutant を偽 kill**していた。本節はフィルタ無しで再実行した正しい結果。
+
+### F-3 dust guard（`EthenaSUSDeAdapter.sol` L310 `require(sharesToSell > 0, "ADAPTER: dust")`）
+| mutant | 変異 | 判定 | kill したテスト |
+|---|---|---|---|
+| 372 | `require(...)` → `assert(true)`（guard 削除） | **KILLED** | `test_F3_dustWithdraw_reverts_insteadOf_drainingAll` |
+| 373 | `require(true, ...)` | **KILLED** | 同上 ＋ `test_F3_dustGuard_thresholdIsBeyondAnyRealisticRate` |
+| 374 | `require(false, ...)` | **KILLED** | 全 withdraw 系テスト（常時 revert） |
+
+### F-1 chain gate（`AdapterRegistry.sol` L128 `if (_isProductionChain())`）
+| mutant | 変異 | 判定 | kill したテスト |
+|---|---|---|---|
+| 141 | `if (true)`（testnet でも常に Timelock 要求） | **KILLED**（新規追加） | `test_F1_registry_proposeGovernance_nonProduction_allowsEOA` / `_defaultChain_allowsEOA`（本リパスで追加） |
+| 142 | `if (false)`（production でも gate 無効） | **KILLED** | `test_F1_registry_proposeGovernance_{mainnet,arbitrumOne,bnb}_rejectsEOA` |
+
+> 141 は初回 scoped run で ThirdReviewRemediation スイートに registry の **false 側**（testnet→EOA 許容）
+> テストが無く生存していた（vault 側には存在）。本リパスで registry 版を追加し **diff-local で kill**。
+> `SIXXVault.sol` L625/L655 の同型 mutant（996/997 等）は既存 `test_M02_*` / `test_F1_vault_*` で kill 済。
+
+### EQ-3: L304 の CAP `if (sharesToSell > shares) sharesToSell = shares;` — **等価変異（kill 不可能）**
+| mutant | 変異 | 判定 |
+|---|---|---|
+| 358 | `if (false) sharesToSell = shares`（cap 無効化） | **SURVIVED＝等価** |
+| 366 | `if (...) assert(true)`（cap 削除） | **SURVIVED＝等価** |
+| 367 | `if (...) sharesToSell = 0` | **SURVIVED＝等価** |
+| 369 | `if (...) sharesToSell = 1` | **SURVIVED＝等価** |
+
+**等価性の証明**: この cap は `withdraw` の **partial 分岐**（`assets < totalAssets()`）でのみ実行される。
+cap が発火する条件は `convertToShares(targetUsde) > shares` ⟺ `targetUsde > convertToAssets(shares) = ta_raw`。
+ここで `targetUsde = assets · SCALE · MAX_BPS/(MAX_BPS − slip)`、`totalAssets() = ta_raw · (MAX_BPS − slip)/MAX_BPS / SCALE`
+（**同じ slippage で haircut**）。整理すると cap 発火 ⟺ `assets > totalAssets()`。しかし partial 分岐は
+`assets < totalAssets()` のときのみ入る。∴ **両条件は排他で、cap は partial 分岐で決して発火しない**
+（`assets == totalAssets()` は上の full-exit 分岐が処理）。gross-up と haircut が相殺するため。
+→ cap は将来の refactor / 整数丸めに対する **defense-in-depth の不活性コード**。baseline `2e8f059` にも
+同じ cap（`sharesToSell > shares || == 0` の複合条件）が存在＝**差分が新規に生んだ test gap ではない**。
+
+- 回帰ガードとして `test_F3cap_maxPartial_sellsSubSlice_neverOversells_norDusts`（最大 partial=`ta-1` でも
+  過剰売却せず dust もしないことを固定）を追加。等価変異は kill しないが cap 不活性性を pin する。
+- **差分 mutation 結論**: 到達可能な差分行（dust guard・chain gate 全 5 mutant）は **全 kill**。
+  唯一の生存 = L304 cap の 4 mutant は上記のとおり **証明済み等価**（＝無テストの到達可能新規コードはゼロ）。

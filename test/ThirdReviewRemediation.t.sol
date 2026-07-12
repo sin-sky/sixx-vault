@@ -234,6 +234,27 @@ contract ThirdReviewRemediationTest is Test {
         assertEq(vault.pendingGovernance(), bob, "F-1: EOA blocked on Arbitrum Sepolia testnet");
     }
 
+    // RINV-5 negative test: the REGISTRY false-side of _isProductionChain() had no
+    //   diff-local coverage (only the vault had a non-production allows-EOA test), so a
+    //   mutant flipping `if (_isProductionChain())` to `if (true)` survived this suite and
+    //   was only caught by RemediationPartB. This pins the registry testnet path here so
+    //   the gate's false branch is killed diff-locally too. (chainid 421614 = Arb Sepolia.)
+    function test_F1_registry_proposeGovernance_nonProduction_allowsEOA() public {
+        vm.chainId(421614);
+        vm.prank(governance);
+        registry.proposeGovernance(bob);
+        assertEq(registry.pendingGovernance(), bob, "F-1: registry EOA blocked off-production");
+    }
+
+    // Also pin the default-chain (31337) registry path — an `if (true)` mutant on the
+    //   registry gate must revert an EOA proposal here, so this kills it directly.
+    function test_F1_registry_proposeGovernance_defaultChain_allowsEOA() public {
+        // no vm.chainId → default 31337 (local), a non-production chain.
+        vm.prank(governance);
+        registry.proposeGovernance(bob);
+        assertEq(registry.pendingGovernance(), bob, "F-1: registry EOA blocked on local chain");
+    }
+
     // =====================================================================
     // M-03 — setAdapter verifies the adapter's vault/asset/governance binding
     // =====================================================================

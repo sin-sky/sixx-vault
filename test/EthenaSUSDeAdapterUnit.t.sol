@@ -74,6 +74,11 @@ contract MockCurvePool {
 
     function setReentrancy(address target) external { reenter = true; reentrantTarget = target; }
 
+    /// @dev Test-only: re-price a coin so an extreme-NAV scenario keeps the pool's
+    ///      sUSDe price aligned with susde.convertToAssets (else the slippage floor,
+    ///      not the dust guard, would revert — masking what we're trying to measure).
+    function setPrice(uint256 i, uint256 p) external { priceUsd[i] = p; }
+
     function get_dy(int128 i, int128 j, uint256 dx) public view returns (uint256) {
         uint256 usd18 = (dx * priceUsd[uint128(i)]) / (10 ** dec[uint128(i)]);
         uint256 dy = (usd18 * (10 ** dec[uint128(j)])) / priceUsd[uint128(j)];
@@ -297,6 +302,100 @@ contract EthenaSUSDeAdapterUnitTest is Test {
 
         // Position must be untouched — the whole point of the fix.
         assertEq(susde.balanceOf(address(adapter)), sharesBefore, "F-3: position was liquidated on a dust request");
+    }
+
+    /// @dev Keep the sUSDe DEX price aligned with susde.convertToAssets after a rate
+    ///      change, so an extreme-NAV withdraw is measured against the F-3 dust guard,
+    ///      not against a mispriced-pool slippage revert. exitPool1 coin0 == sUSDe.
+    function _setSusdeRate(uint256 r) internal {
+        susde.setRate(r);
+        exitPool1.setPrice(0, r);
+    }
+
+    // ── RINV-5 note: the L304 CAP (`if (sharesToSell > shares)`) is UNREACHABLE in the
+    //    partial branch, so its 4 surviving mutants (if(false)/delete/=0/=1) are EQUIVALENT.
+    //    Proof: totalAssets() applies the SAME slippage haircut (×(MAX_BPS-slip)/MAX_BPS)
+    //    that the withdraw gross-up inverts (×MAX_BPS/(MAX_BPS-slip)). The cap fires iff
+    //    convertToShares(targetUsde) > shares ⟺ targetUsde > convertToAssets(shares)=ta_raw
+    //    ⟺ assets·gross > ta_raw ⟺ assets > ta_raw·(1-slip')/SCALE = totalAssets. But the
+    //    partial branch is only entered when assets < totalAssets(). So `sharesToSell > shares`
+    //    can never hold in this branch (the two conditions are mutually exclusive); the
+    //    boundary assets==totalAssets() is handled by the full-exit branch above. The cap is
+    //    kept as defense-in-depth against future refactors / integer-rounding and was present
+    //    (as `sharesToSell > shares || == 0`) at the baseline too. Documented in
+    //    audit/MUTATION_TRIAGE.md. The behaviour actually exercised below is the DUST guard.
+    //
+    //    The state-boundary this asserts: even the request that comes CLOSEST to the cap
+    //    (assets = totalAssets()-1, max partial) still sells a strict sub-slice, never
+    //    over-sells and never dusts — confirming the cap is inert, not silently mis-capping.
+    function test_F3cap_maxPartial_sellsSubSlice_neverOversells_norDusts() public {
+        _vaultDeposit(1_000e6);
+        uint256 ta = adapter.totalAssets();
+        uint256 sharesBefore = susde.balanceOf(address(adapter));
+        vm.prank(vault);
+        uint256 withdrawn = adapter.withdraw(ta - 1, recipient); // max partial, no dust revert
+        assertGt(withdrawn, 0, "max-partial delivered nothing");
+        assertGt(susde.balanceOf(address(adapter)), 0, "cap unexpectedly sold the whole balance");
+        assertLt(susde.balanceOf(address(adapter)), sharesBefore, "nothing was sold");
+    }
+
+    // ── RINV-2: F-3 dust guard must NOT revert legitimate withdraws under extreme NAV ──
+    // The guard fires only when convertToShares(grossed-up target) rounds to 0, i.e. when
+    // the sUSDe price is astronomically high. These prove the smallest possible partial
+    // withdraw (assets = 1 = 1e-6 USDC) survives every realistic extreme.
+
+    // (a) after a deep write-off (sUSDe rate collapses → share price small → dust LESS
+    //     likely; convertToShares grows). 50% and then a 99.9% haircut.
+    function test_F3_extremeNAV_afterWriteOff_minWithdraw_noDustRevert() public {
+        _vaultDeposit(1_000e6);
+        _setSusdeRate(0.5e18); // -50%
+        vm.prank(vault);
+        adapter.withdraw(1, recipient); // must NOT revert "ADAPTER: dust"
+        _setSusdeRate(1e15); // -99.9%
+        vm.prank(vault);
+        adapter.withdraw(1, recipient);
+    }
+
+    // (b) after a huge gain (sUSDe rate up 1000×) — this is the dust-FAVORING direction
+    //     (share price large → convertToShares shrinks). 1000× is already ~centuries of
+    //     yield; the min withdraw still clears with shares to spare.
+    function test_F3_extremeNAV_afterHugeGain_minWithdraw_noDustRevert() public {
+        _vaultDeposit(1_000e6);
+        _setSusdeRate(1.2e21); // 1000× the 1.2e18 base
+        assertLt(1, adapter.totalAssets(), "precondition: still a partial");
+        vm.prank(vault);
+        adapter.withdraw(1, recipient); // must NOT revert "ADAPTER: dust"
+    }
+
+    // (c) first-depositor / very small position — low totalSupply, tiny NAV.
+    function test_F3_extremeNAV_firstDepositor_partialWithdraw_noDustRevert() public {
+        _vaultDeposit(2e6); // $2 seed
+        vm.prank(vault);
+        adapter.withdraw(1e6, recipient); // half — partial, no dust
+    }
+
+    // (d) tiny totalAssets AND the absolute-minimum withdraw at once.
+    function test_F3_extremeNAV_tinyTotalAssets_minWithdraw_noDustRevert() public {
+        _vaultDeposit(2e6);
+        assertLt(1, adapter.totalAssets(), "precondition: partial");
+        vm.prank(vault);
+        adapter.withdraw(1, recipient);
+    }
+
+    // (threshold) bound the guard's reachability: the smallest withdraw only rounds to
+    //   zero shares once the sUSDe price is ~1e12× today's (≈1e30) — economically
+    //   impossible. rate=1e21 (1000×) is safe; rate=2e30 (~1e12×) is where it first bites.
+    function test_F3_dustGuard_thresholdIsBeyondAnyRealisticRate() public {
+        _vaultDeposit(1_000e6);
+
+        _setSusdeRate(1e21); // 1000× — realistic-extreme, still safe
+        vm.prank(vault);
+        adapter.withdraw(1, recipient);
+
+        _setSusdeRate(2e30); // ~1e12× appreciation — only HERE does assets=1 dust
+        vm.prank(vault);
+        vm.expectRevert("ADAPTER: dust");
+        adapter.withdraw(1, recipient);
     }
 
     function test_withdraw_zero_recipient_reverts() public {

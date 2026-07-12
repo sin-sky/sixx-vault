@@ -32,8 +32,37 @@ ERC-4626 vault が、ガバナンス whitelist された **1 adapter** 経由で
 ## 2. ビルド／テスト手順（再現可能）
 
 ```bash
-# 0) Foundry（未導入なら）
-curl -L https://foundry.paradigm.xyz | bash && foundryup    # forge 1.7.x
+# 0) Foundry（forge/cast/anvil を v1.7.1 に pin）
+curl -L https://foundry.paradigm.xyz | bash
+foundryup -i v1.7.1
+
+# 0.5) 監査ツールチェーン（pinned・contract-audit.sh / mutation / halmos / echidna 用）
+#   ★ バージョンを固定しないと aderyn 等が別ビルドになり exit 101 で panic する。
+#     下の 0.8) verify で全ツール PASS を確認すること（正典＝scripts/verify-audit-toolchain.sh）。
+#   -- Python 系（slither/solc/crytic-compile/halmos）を隔離 venv に（Linux/macOS 共通）--
+python3 -m venv /opt/audit-venv
+/opt/audit-venv/bin/pip install \
+  "slither-analyzer==0.11.5" "solc-select==1.2.0" "crytic-compile==0.3.11" "halmos==0.3.3"
+for b in slither solc-select solc crytic-compile halmos; do \
+  sudo ln -sf /opt/audit-venv/bin/$b /usr/local/bin/$b; done
+solc-select install 0.8.28 && solc-select use 0.8.28
+#   -- prebuilt バイナリ（Rust 不要・Linux x86_64。★macOS は各 release の *-apple-darwin tarball に置換）--
+curl -fsSL -o /tmp/aderyn.tar.xz \
+  https://github.com/Cyfrin/aderyn/releases/download/aderyn-v0.6.8/aderyn-x86_64-unknown-linux-gnu.tar.xz \
+  && tar -xJf /tmp/aderyn.tar.xz -C /tmp \
+  && sudo install -m0755 "$(find /tmp -maxdepth 2 -name aderyn -type f | head -1)" /usr/local/bin/aderyn
+curl -fsSL -o /tmp/echidna.tar.gz \
+  https://github.com/crytic/echidna/releases/download/v2.3.2/echidna-2.3.2-x86_64-linux.tar.gz \
+  && tar -xzf /tmp/echidna.tar.gz -C /tmp \
+  && sudo install -m0755 "$(find /tmp -maxdepth 2 -name echidna -type f | head -1)" /usr/local/bin/echidna
+sudo curl -fsSL -o /usr/local/bin/gambit \
+  https://github.com/Certora/gambit/releases/download/v1.0.6/gambit-linux-v1.0.6 && sudo chmod +x /usr/local/bin/gambit
+
+# 0.8) 版一致を検証（全ツール PASS を確認。aderyn は exit 0 が正常）
+./scripts/verify-audit-toolchain.sh
+#   ↳ どうしても aderyn が当該プラットフォームで panic (exit 101) する場合のみ：
+#     ADERYN_ADVISORY=1 ./scripts/contract-audit.sh  （aderyn を manual-review WARN に降格。
+#     PASS を偽装しない＝Slither が主ゲートのまま。詳細は §4.4）
 
 # 1) 依存（zip 同梱の lib/ をそのまま使う場合は不要。git clone から始める場合のみ）
 #    git submodule update --init --recursive

@@ -36,7 +36,7 @@ copy "script"     "$STAGE/"        # deploy/wiring scripts (public addrs only; D
 copy "lib"        "$STAGE/"        # OZ + forge-std, pinned; .git stripped
 copy "audit"      "$STAGE/"
 mkdir -p "$STAGE/scripts"
-cp scripts/contract-audit.sh scripts/mutation-test.sh scripts/make-handoff.sh "$STAGE/scripts/"
+cp scripts/contract-audit.sh scripts/mutation-test.sh scripts/make-handoff.sh scripts/verify-audit-toolchain.sh "$STAGE/scripts/"
 cp foundry.toml remappings.txt .gitmodules echidna.yaml "$STAGE/"
 cp AUDIT_PACKAGE.md PRE_AUDIT_HARDENING.md CLAUDE.md "$STAGE/" 2>/dev/null || true
 cp SETUP.md "$STAGE/" 2>/dev/null || true

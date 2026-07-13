@@ -246,3 +246,19 @@ require（#141）は**現 tip では既存スイートが kill 済**（旧 froze
 - 追加 8 テスト（clean 全 PASS＝**316 tests / 0 fail**）で **#110,#111,#115,#116,#441,#577,#584 を kill**（個別実証）。
   残 8 は上記 D のとおり **等価 or 他バッテリ被覆**。
   **実効：到達可能かつ他バッテリ未被覆の新規 test gap = ゼロ。**
+
+---
+
+## 追補（2026-07-13・Round 8 v2 独立監査の C-1 ガードによる #438 の扱い変更）
+
+Round-8 v2 独立監査(6エージェント)で収束した Medium(C-1/D-1/E-1:reverting-valuation × 実損で
+stale `_totalDebt` に fallback → 先着 skew ∞)への修正として、`_exitRealize` を「valuation 不読時は
+idle-only(recall しない)」に硬化(`docs/architecture/designs/007-pro-rata-exit-design.md` D-5)。
+これにより **#438 が変異していた `catch { mark = _totalDebt; }` の行は構造的に消滅**（catch は recall を
+スキップするだけ）。よって #438 の直接 pin テスト `test_exitRealize_markFallback_deliversWhenValuationReverts`
+は挙動が反転（配当 → idle-only）したため `test_exitRealize_valuationRevert_idleOnly_thenForceDetachRecovers`
+に置換（idle-only・no-brick・force-detach 復旧を固定）。同型の H-02 テストも
+`test_H02_valuationRevert_idleOnly_noBrick_thenDetachRecovers` に更新。ガードの新規行は
+targeted mutation（deposit-pause 除去・`_adapterValuationReadable`→常 true）で **全 kill 実証**。
+**トレードオフ**: broken-oracle の単独 exit が permissionless recall → force-detach 依存（governance-gated）に。
+資金喪失・brick なし（force-detach で全額回復）だが H-02 の可用性を弱める＝SHIN 凍結判断で要確認。

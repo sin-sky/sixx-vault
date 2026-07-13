@@ -101,18 +101,33 @@ contract ThirdReviewRemediationTest is Test {
     /// Even WITHOUT shutdown (funds still in the adapter, not idle): a reverting valuation
     /// must fall back to a best-effort recall so the user can still exit as long as the
     /// adapter's own withdraw can deliver.
-    function test_H02_recall_fallsBack_whenTotalAssetsReverts_noShutdown() public {
+    /// H-02 + C-1 guard (Round-8 v2): a reverting adapter valuation must never BRICK an exit, but
+    /// the exit is now IDLE-ONLY (it does NOT recall against the stale loss-blind `_totalDebt` — the
+    /// finding C-1/D-1/E-1 fix). With idle==0 the solo exit returns 0 (no revert, claim retained);
+    /// the adapter funds are released FAIRLY by force-detach. This deliberately supersedes the old
+    /// "permissionless recall on broken oracle" behavior (now governance-gated via force-detach).
+    function test_H02_valuationRevert_idleOnly_noBrick_thenDetachRecovers() public {
         _deposit(alice, 1_000 * USDC_6);
-        FaultyAdapter f = _swapToFaulty();      // funds held in the faulty adapter
-        f.setRevertOnTotalAssets(true);         // valuation reverts; withdraw still delivers 100%
+        FaultyAdapter f = _swapToFaulty();      // funds held in the faulty adapter; idle == 0
+        f.setRevertOnTotalAssets(true);         // valuation reverts
 
         uint256 shares   = vault.balanceOf(alice);
         uint256 balBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        uint256 got = vault.redeem(shares, alice, alice); // MUST NOT revert
+        uint256 got = vault.redeem(shares, alice, alice); // MUST NOT revert (柱1)
 
-        assertGt(got, 0, "H-02: recall fallback failed under totalAssets revert");
-        assertEq(usdc.balanceOf(alice) - balBefore, got, "H-02: user did not receive assets");
+        assertEq(got, 0, "guard: idle-only exit (idle==0), no recall against stale mark");
+        assertEq(usdc.balanceOf(alice), balBefore, "nothing delivered while idle-only");
+        assertGt(vault.balanceOf(alice), 0, "no brick; claim retained");
+
+        // force-detach releases the adapter funds -> alice recovers in full.
+        f.setRevertOnTotalAssets(false);
+        vm.prank(governance);
+        vault.setAdapter(address(0));
+        uint256 rem = vault.balanceOf(alice); // hoist before prank (a call here would consume it)
+        vm.prank(alice);
+        uint256 got2 = vault.redeem(rem, alice, alice);
+        assertApproxEqAbs(got + got2, 1_000 * USDC_6, 3, "force-detach recovers full principal");
     }
 
     /// totalAssets() itself must never revert — it degrades to the last booked debt so all

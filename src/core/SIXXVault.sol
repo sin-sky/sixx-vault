@@ -203,6 +203,23 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         return raw > lp ? raw - lp : 0;
     }
 
+    /// @notice True unless the active adapter's valuation is currently unreadable (reverting).
+    /// @dev C-1/D-1/E-1 guard (Round-8 v2): when `adapter.totalAssets()` reverts, `totalAssets()`
+    ///      degrades to the loss-blind `_totalDebt`, which OVER-reports NAV after a realized loss.
+    ///      Detection is a direct try/catch — it is `false` ONLY when the call actually reverts, so
+    ///      it can never false-positive and degrade a healthy adapter. Used to (a) idle-only the
+    ///      exit recall and (b) pause deposits, so no exit prices against, and no depositor mints
+    ///      against, a stale overstated mark. Force-detach (writes `_totalDebt` to realized) clears it.
+    function _adapterValuationReadable() internal view returns (bool) {
+        address a = activeAdapter;
+        if (a == address(0)) return true; // already detached: idle-only is the state, not a fault
+        try IStrategyAdapter(a).totalAssets() returns (uint256) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     /// @notice Amount of harvested profit still locked; degrades linearly to 0 over
     ///         PROFIT_UNLOCK_PERIOD after the last harvest.
     function lockedProfit() public view override returns (uint256) {
@@ -245,12 +262,14 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         // H-01: surface the post-force-detach deposit pause (impaired/unreadable NAV)
         //   through the ERC-4626 view, matching the `_deposit` revert, so previews and
         //   integrators see 0 capacity while paused.
-        if (emergencyShutdown || depositsPaused) return 0;
+        // C-1 guard: also pause while the adapter valuation is UNREADABLE — else a depositor
+        //   would mint against the over-reported stale-`_totalDebt` NAV.
+        if (emergencyShutdown || depositsPaused || !_adapterValuationReadable()) return 0;
         return type(uint256).max;
     }
 
     function maxMint(address) public view override(ERC4626, IERC4626) returns (uint256) {
-        if (emergencyShutdown || depositsPaused) return 0;
+        if (emergencyShutdown || depositsPaused || !_adapterValuationReadable()) return 0;
         return type(uint256).max;
     }
 
@@ -328,31 +347,37 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
         uint256 fromAdapter;
         if (activeAdapter != address(0)) {
-            // F-2 (H-02 regression / 柱1): if the adapter's valuation reverts, degrade the mark to
-            //   the last booked debt (_totalDebt) — the SAME fallback totalAssets() uses — so a
-            //   broken oracle never zeroes the recall and strands funds behind a still-working
-            //   withdraw. mark=0 here would revive the very exit-bricking H-02 fixed elsewhere.
-            uint256 mark;
-            try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 a) { mark = a; } catch { mark = _totalDebt; }
-            // 柱3: cap the recall at the caller's pro-rata slice of the mark. F-3 (INV-3): also cap
-            //   at what is actually NEEDED to pay the request (requestedAssets - idleShare). The mark
-            //   can exceed the realizable NAV by the still-locked profit (totalAssets subtracts
-            //   lockedProfit, the recall does not); recalling the raw pro-rata would pull that
-            //   locked slice into idle where it strands and breaks non-custody-no-idle.
-            uint256 wantAdapter;
-            if (supply != 0) {
-                uint256 proRata = Math.mulDiv(mark, shares, supply);
-                uint256 need = requestedAssets > idleShare ? requestedAssets - idleShare : 0;
-                wantAdapter = proRata < need ? proRata : need;
-            }
-            if (wantAdapter > 0) {
-                uint256 balBefore = idle0;
-                // 柱1: honest partial-fill — pull best-effort and NEVER revert on a shortfall.
-                //   The realized delta (not the adapter's word) is the source of truth (M13-16).
-                try IStrategyAdapter(activeAdapter).withdraw(wantAdapter, address(this)) {} catch {}
-                uint256 balNow = IERC20(asset()).balanceOf(address(this));
-                fromAdapter = balNow > balBefore ? balNow - balBefore : 0;
-                _totalDebt = _totalDebt > fromAdapter ? _totalDebt - fromAdapter : 0;
+            // C-1/D-1/E-1 guard (Round-8 v2): recall ONLY against a READABLE valuation. The whole
+            //   recall lives inside the `totalAssets()` try — if the adapter valuation reverts we
+            //   take the catch and do NOT recall (idle-only exit, fromAdapter stays 0). This still
+            //   satisfies F-2/柱1 (a broken oracle NEVER bricks the exit — the caller is paid their
+            //   idle pro-rata), but it no longer prices the recall against the stale, loss-blind
+            //   `_totalDebt`: that over-stated mark let the FIRST exiter drain the whole realizable
+            //   pool while the last got 0 (skew ∞). Under an unreadable valuation the adapter's
+            //   realizable value is unknown, so it is released FAIRLY by governance force-detach
+            //   (which writes `_totalDebt` down to realized), not first-come-first-served here.
+            try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 mark) {
+                // 柱3: cap the recall at the caller's pro-rata slice of the mark. F-3 (INV-3): also
+                //   cap at what is actually NEEDED (requestedAssets - idleShare). The mark can exceed
+                //   realizable NAV by still-locked profit (totalAssets subtracts lockedProfit, the
+                //   recall does not); recalling raw pro-rata would strand that in idle (non-custody).
+                uint256 wantAdapter;
+                if (supply != 0) {
+                    uint256 proRata = Math.mulDiv(mark, shares, supply);
+                    uint256 need = requestedAssets > idleShare ? requestedAssets - idleShare : 0;
+                    wantAdapter = proRata < need ? proRata : need;
+                }
+                if (wantAdapter > 0) {
+                    uint256 balBefore = idle0;
+                    // 柱1: honest partial-fill — pull best-effort and NEVER revert on a shortfall.
+                    //   The realized delta (not the adapter's word) is the source of truth (M13-16).
+                    try IStrategyAdapter(activeAdapter).withdraw(wantAdapter, address(this)) {} catch {}
+                    uint256 balNow = IERC20(asset()).balanceOf(address(this));
+                    fromAdapter = balNow > balBefore ? balNow - balBefore : 0;
+                    _totalDebt = _totalDebt > fromAdapter ? _totalDebt - fromAdapter : 0;
+                }
+            } catch {
+                // valuation unreadable -> idle-only exit (fromAdapter stays 0), released by force-detach.
             }
         }
 

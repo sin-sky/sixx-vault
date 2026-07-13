@@ -1259,7 +1259,12 @@ contract SIXXVaultTest is Test {
     /// valuation read REVERTS, _exitRealize must degrade the mark to the last booked debt
     /// (_totalDebt) so the pro-rata recall still pulls funds and the exit delivers. The mutant's
     /// mark==1 collapses proRata to ~1 wei, recalls ~nothing, and delivers ~0 despite withdraw() working.
-    function test_exitRealize_markFallback_deliversWhenValuationReverts() public {
+    /// C-1 guard (Round-8 v2, supersedes the #438 mark=_totalDebt fallback): when the adapter
+    /// valuation REVERTS the exit is IDLE-ONLY — it does NOT recall against the stale, loss-blind
+    /// `_totalDebt` (which would let a first exiter drain the pool). The exit still never bricks
+    /// (柱1); the adapter funds are released FAIRLY by force-detach. NB this is a deliberate
+    /// weakening of the old H-02 "permissionless recall on broken oracle" → governance-gated.
+    function test_exitRealize_valuationRevert_idleOnly_thenForceDetachRecovers() public {
         FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
         vm.startPrank(governance);
         registry.registerAdapter(address(faulty), "Test", "Faulty");
@@ -1269,21 +1274,28 @@ contract SIXXVaultTest is Test {
         uint256 amount = 1_000 * USDC_6;
         vm.startPrank(alice);
         usdc.approve(address(vault), amount);
-        vault.deposit(amount, alice); // funds in faulty adapter; _totalDebt == amount
+        uint256 shares = vault.deposit(amount, alice); // funds in faulty adapter; idle == 0
         vm.stopPrank();
 
-        // Break the valuation read only; withdraw() still delivers 100% (deliverBps default).
-        faulty.setRevertOnTotalAssets(true);
+        faulty.setRevertOnTotalAssets(true); // valuation unreadable
 
-        uint256 mw = vault.maxWithdraw(alice); // survives via totalAssets()'s _totalDebt fallback (H-02)
-        assertGt(mw, 0, "maxWithdraw survives broken valuation");
-
+        // GUARD: idle-only exit (idle==0) — returns 0, does NOT brick, claim retained.
         uint256 balBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        uint256 got = vault.withdraw(mw, alice, alice);
-        assertApproxEqAbs(got, amount, 2, "exit delivers against _totalDebt mark when valuation reverts");
-        assertEq(usdc.balanceOf(alice) - balBefore, got, "assets actually delivered to owner");
-        assertGt(got, amount / 2, "substantial delivery (kills mark=1 -> ~0 recall)");
+        uint256 got = vault.redeem(shares / 2, alice, alice); // must not revert
+        assertEq(got, 0, "guard: no recall against stale mark (idle-only, idle==0)");
+        assertEq(usdc.balanceOf(alice), balBefore, "nothing delivered while idle-only");
+        assertGt(vault.balanceOf(alice), 0, "no brick; claim retained");
+        assertEq(vault.maxDeposit(alice), 0, "deposits paused while valuation unreadable");
+
+        // Force-detach releases the adapter funds; alice recovers her full principal, fairly.
+        faulty.setRevertOnTotalAssets(false); // detach recall needs a readable withdraw path
+        vm.prank(governance);
+        vault.setAdapter(address(0));
+        uint256 rem = vault.balanceOf(alice); // hoist before prank (a call here would consume it)
+        vm.prank(alice);
+        uint256 got2 = vault.redeem(rem, alice, alice);
+        assertApproxEqAbs(got + got2, amount, 3, "force-detach: alice recovers full principal");
     }
 
     /// Kills #456 (F-3 `need = requestedAssets - idleShare` -> `+ idleShare`): the adapter recall

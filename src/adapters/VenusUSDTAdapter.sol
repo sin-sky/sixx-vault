@@ -160,6 +160,14 @@ contract VenusUSDTAdapter is IStrategyAdapter, ReentrancyGuard {
         require(assets > 0, "ADAPTER: zero amount");
         require(recipient != address(0), "ADAPTER: zero recipient");
 
+        // B-2 (Round 8): measure `withdrawn` as the real USDT balance delta in BOTH
+        //   branches, never the assumed input. redeemUnderlying/redeem both deliver to this
+        //   adapter, so the delta is the amount actually received — symmetric with the
+        //   swap-adapter M-04 pattern. The partial branch previously trusted `withdrawn =
+        //   assets`; a vToken that returned success (0) while delivering a different amount
+        //   (Compound-v2 fork upgrade / stale-rate rounding) would then have safeTransfer'd
+        //   USDT it did not hold (revert) or under-reported a surplus. Delta is exact.
+        uint256 before = IERC20(asset).balanceOf(address(this));
         if (assets >= _underlyingValue()) {
             // Drain-all path (recall on shutdown / adapter migration / last full
             // exit): redeem the ENTIRE vUSDT balance by vToken amount instead of
@@ -169,15 +177,13 @@ contract VenusUSDTAdapter is IStrategyAdapter, ReentrancyGuard {
             // bricks a 100% exit with Venus "redeemTokens zero". `redeem(balance)`
             // burns to exactly zero, so no dust survives the recall.
             uint256 vBal = vToken.balanceOf(address(this));
-            uint256 before = IERC20(asset).balanceOf(address(this));
             if (vBal > 0) {
                 require(vToken.redeem(vBal) == 0, "ADAPTER: redeem failed");
             }
-            withdrawn = IERC20(asset).balanceOf(address(this)) - before;
         } else {
             require(vToken.redeemUnderlying(assets) == 0, "ADAPTER: redeem failed");
-            withdrawn = assets;
         }
+        withdrawn = IERC20(asset).balanceOf(address(this)) - before;
 
         IERC20(asset).safeTransfer(recipient, withdrawn);
         emit Withdrawn(assets, withdrawn, recipient);

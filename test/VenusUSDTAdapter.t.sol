@@ -41,6 +41,10 @@ contract MockVUSDT is IVenusVToken {
     bool public mintShouldFail;
     bool public redeemShouldFail;
     bool public supplyRateReverts;
+    /// @dev B-2: fraction of a redeemUnderlying request actually DELIVERED while still
+    ///      returning success (0). Models a forked/upgraded vToken whose return code lies
+    ///      about the delivered amount. Default 100% = honest.
+    uint256 public deliverBps = 10_000;
 
     constructor(address underlying_, uint256 initialRate) {
         _underlying = underlying_;
@@ -68,7 +72,7 @@ contract MockVUSDT is IVenusVToken {
         uint256 vBurn = (redeemAmount * 1e18 + exchangeRate - 1) / exchangeRate; // round up
         if (vBurn > _vBal[msg.sender]) return 9; // COMPTROLLER_REJECTION-ish
         _vBal[msg.sender] -= vBurn;
-        IERC20(_underlying).transfer(msg.sender, redeemAmount);
+        IERC20(_underlying).transfer(msg.sender, (redeemAmount * deliverBps) / 10_000);
         return 0;
     }
 
@@ -81,6 +85,7 @@ contract MockVUSDT is IVenusVToken {
     }
 
     // ── test helpers ──────────────────────────────────────────
+    function setDeliverBps(uint256 b) external { deliverBps = b; }
     function setExchangeRate(uint256 r) external { exchangeRate = r; }
     function setSupplyRate(uint256 r) external { supplyRate = r; }
     function setMintShouldFail(bool f) external { mintShouldFail = f; }
@@ -278,6 +283,25 @@ contract VenusUSDTAdapterTest is Test {
         assertEq(usdt.balanceOf(alice), part, "recipient got the partial amount");
         assertApproxEqAbs(adapter.totalAssets(), DEPOSIT - part, 1, "remainder stays invested");
         assertGt(vusdt.balanceOf(address(adapter)), 0, "still holds vUSDT");
+    }
+
+    /// @dev B-2 (Round 8): the partial withdraw path reports the REAL USDT balance delta,
+    ///      not the assumed input. If a (forked/upgraded) vToken returns success while
+    ///      delivering less than requested, `withdrawn = assets` would have safeTransfer'd
+    ///      USDT the adapter does not hold and reverted (DoS). Measuring the delta lets the
+    ///      call report exactly what was received and forward it — symmetric with drain-all.
+    function test_B2_partialWithdraw_reportsRealDelta_notAssumedInput() public {
+        _fundAndDeposit(DEPOSIT);
+        vusdt.setDeliverBps(9_000); // vToken delivers only 90% of the request, returns 0
+
+        uint256 part = DEPOSIT / 4;
+        uint256 expected = (part * 9_000) / 10_000;
+
+        vm.prank(vault);
+        uint256 withdrawn = adapter.withdraw(part, alice);
+
+        assertEq(withdrawn, expected, "must report the actual delivered delta, not the input");
+        assertEq(usdt.balanceOf(alice), expected, "recipient receives exactly the delivered delta");
     }
 
     /// @dev Drain-all withdraw (>= totalAssets) redeems the entire vToken balance,

@@ -151,34 +151,79 @@ contract ProfitStreamingTest is Test {
         assertEq(vault.lockedProfit(), 0, "nothing locked while paused");
     }
 
-    /// @notice R8-1: emergency shutdown clears locked profit so totalAssets() is NOT
-    ///         suppressed during the emergency exit window. Shutdown waives the withdraw lock
-    ///         and invites everyone to exit at once; with locked profit still set, an early
-    ///         exiter would be priced against a suppressed NAV (unfair intra-user
-    ///         redistribution over the 8h tail). This mirrors the force-detach handling.
-    function test_R8_1_shutdown_clearsLockedProfit_noSuppressedExit() public {
+    /// @notice B-1 PoC: does clearing locked profit at shutdown re-introduce the exact JIT
+    ///         skim that profit-streaming exists to prevent? An attacker front-runs the
+    ///         guardian's (mempool-visible) shutdown tx with a deposit at the SUPPRESSED NAV,
+    ///         then redeems right after the clear lifts NAV. We measure the extraction in USDC.
+    function _b1_extraction(uint256 attackerIn) internal returns (int256 extraction, uint256 aliceLoss) {
         uint256 aliceShares = _deposit(alice, 10_000 * USDC_6);
         _fundReward(1_000 * USDC_6);
         vault.harvest();
+        assertApproxEqAbs(vault.lockedProfit(), 1_000 * USDC_6, 2, "reward locked pre-attack");
 
-        // Pre-condition: profit is locked and totalAssets is suppressed to ~principal.
+        // Attacker front-runs shutdown with a deposit priced against the suppressed NAV.
+        usdc.mint(bob, attackerIn);
+        uint256 bobShares = _deposit(bob, attackerIn);
+
+        // Guardian's shutdown lands right after (same block).
+        vm.prank(guardianAddr);
+        vault.setEmergencyShutdown(true);
+
+        // Attacker exits immediately (withdraw lock is waived during shutdown).
+        uint256 bBefore = usdc.balanceOf(bob);
+        vm.prank(bob);
+        vault.redeem(bobShares, bob, bob);
+        extraction = int256(usdc.balanceOf(bob) - bBefore) - int256(attackerIn);
+
+        // Alice (the honest holder) exits; measure how much of her 1_000 reward survived.
+        uint256 aBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        vault.redeem(aliceShares, alice, alice);
+        uint256 aliceGot = usdc.balanceOf(alice) - aBefore;
+        aliceLoss = aliceGot >= 11_000 * USDC_6 ? 0 : (11_000 * USDC_6 - aliceGot);
+    }
+
+    /// A same-block front-run of the shutdown tx must NOT let the attacker skim locked
+    /// profit. Retaining the linear unlock through shutdown keeps extraction at 0 (a naive
+    /// clear-on-shutdown would hand over up to the full locked profit — see the doc comment
+    /// in setEmergencyShutdown and audit/ROUND8_ADVERSARIAL_2026-07-13.md).
+    function test_B1_shutdownJIT_equalStake_noExtraction() public {
+        (int256 ext,) = _b1_extraction(10_000 * USDC_6);
+        emit log_named_int("equal-stake attacker extraction (USDC 6dp)", ext);
+        assertLe(ext, int256(2), "B-1: equal-stake attacker skimmed locked profit at shutdown");
+    }
+
+    function test_B1_shutdownJIT_whale_noExtraction() public {
+        (int256 ext,) = _b1_extraction(1_000_000 * USDC_6);
+        emit log_named_int("whale attacker extraction (USDC 6dp)", ext);
+        assertLe(ext, int256(2), "B-1: whale attacker skimmed locked profit at shutdown");
+    }
+
+    /// @notice R8-1 (revised): emergency shutdown deliberately PRESERVES the linear profit
+    ///         unlock — it does NOT clear _lockedProfit (that would re-introduce the JIT skim,
+    ///         see test_B1_*). The locked reward is value-conserving: it stays in the vault and
+    ///         a holder who remains through the unlock window still receives it in full.
+    function test_R8_1_shutdown_preservesStreaming_rewardVestsToStayer() public {
+        uint256 aliceShares = _deposit(alice, 10_000 * USDC_6);
+        _fundReward(1_000 * USDC_6);
+        vault.harvest();
         assertApproxEqAbs(vault.lockedProfit(), 1_000 * USDC_6, 2, "profit locked pre-shutdown");
-        assertApproxEqAbs(vault.totalAssets(), 10_000 * USDC_6, 2, "NAV suppressed pre-shutdown");
 
         // Guardian trips the emergency valve (funds recalled, withdraw lock waived).
         vm.prank(guardianAddr);
         vault.setEmergencyShutdown(true);
 
-        // R8-1: locked profit is cleared immediately — NAV reflects the full realized value
-        // the instant everyone is invited to exit.
-        assertEq(vault.lockedProfit(), 0, "locked profit cleared on shutdown");
-        assertApproxEqAbs(vault.totalAssets(), 11_000 * USDC_6, 2, "NAV = principal + reward at shutdown");
+        // Streaming is untouched: the unlock schedule keeps running across shutdown.
+        assertApproxEqAbs(vault.lockedProfit(), 1_000 * USDC_6, 2, "unlock schedule preserved at t0");
+        assertApproxEqAbs(vault.totalAssets(), 10_000 * USDC_6, 2, "NAV still streaming (not lifted)");
 
-        // An early exiter now receives full pro-rata value, not a suppressed share.
+        // A holder who stays through the unlock window receives principal + full reward.
+        vm.warp(block.timestamp + PERIOD + 1);
+        assertEq(vault.lockedProfit(), 0, "fully unlocked after window");
         uint256 balBefore = usdc.balanceOf(alice);
         vm.prank(alice);
         vault.redeem(aliceShares, alice, alice);
         uint256 got = usdc.balanceOf(alice) - balBefore;
-        assertApproxEqRel(got, 11_000 * USDC_6, 0.005e18, "early exiter gets full value, not suppressed");
+        assertApproxEqRel(got, 11_000 * USDC_6, 0.005e18, "stayer receives principal + full reward");
     }
 }

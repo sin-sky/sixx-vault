@@ -579,6 +579,52 @@ contract SIXXVaultTest is Test {
         );
     }
 
+    /// @notice B-2 (Round 8): emergency shutdown must WAIVE the management-fee window — it
+    ///         crystallizes fees earned before shutdown, then does not bill the non-productive
+    ///         shutdown window to users exiting a broken strategy.
+    function test_B2_shutdown_waivesManagementFeeWindow() public {
+        vm.prank(governance);
+        vault.setManagementFee(500); // 5%/yr (max) to make the effect measurable
+
+        uint256 amount = 10_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        // Accrue a legitimate pre-shutdown fee window.
+        vm.warp(block.timestamp + 30 days);
+
+        // Guardian trips shutdown: pre-shutdown fee is crystallized while the vault is live.
+        vm.prank(guardianAddr);
+        vault.setEmergencyShutdown(true);
+        uint256 feeAtShutdown = vault.balanceOf(feeRcpt);
+        assertGt(feeAtShutdown, 0, "pre-shutdown fee must be crystallized at shutdown");
+
+        // A long, non-productive shutdown window elapses.
+        vm.warp(block.timestamp + 365 days);
+
+        // Neither a permissionless collect nor an exit may bill the shutdown window.
+        vault.collectFees();
+        assertEq(vault.balanceOf(feeRcpt), feeAtShutdown, "shutdown window must not accrue fee");
+        uint256 aliceShares = vault.balanceOf(alice);
+        vm.prank(alice);
+        vault.redeem(aliceShares, alice, alice);
+        assertEq(vault.balanceOf(feeRcpt), feeAtShutdown, "exit during shutdown must not be billed");
+
+        // The waiver is temporary: after governance re-enables, accrual resumes from the lift.
+        vm.prank(governance);
+        vault.setEmergencyShutdown(false);
+        vm.startPrank(bob);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, bob);
+        vm.stopPrank();
+        uint256 feeAfterReopen = vault.balanceOf(feeRcpt);
+        vm.warp(block.timestamp + 365 days);
+        vault.collectFees();
+        assertGt(vault.balanceOf(feeRcpt), feeAfterReopen, "accrual must resume after shutdown lifts");
+    }
+
     // ─────────────────────────────────────────────────────────
     // collectFees — elapsed == 0 path (mutation #42 regression guard)
     //   `if (elapsed == 0) return 0;` short-circuits fee accrual when no time

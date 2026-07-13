@@ -541,6 +541,13 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     ///      dodge their share. CEI: the fee anchor is advanced before the mint.
     function _collectFees() internal returns (uint256 feeShares) {
         if (managementFee == 0 || feeRecipient == address(0)) return 0;
+        // B-2 (Round 8): freeze management-fee accrual during emergency shutdown. Management
+        //   fee is a time-based AUM fee; billing it across a window in which the strategy is
+        //   shut down (broken/idle) would dilute users trying to exit — least defensible exactly
+        //   when trust is lowest. setEmergencyShutdown crystallizes the fee up to the shutdown
+        //   instant (while still live) and resets the anchor on re-enable, so the shutdown window
+        //   is WAIVED, not billed retroactively on the first post-recovery interaction.
+        if (emergencyShutdown) return 0;
 
         uint256 elapsed = block.timestamp - _lastHarvestTimestamp;
         if (elapsed == 0) return 0;
@@ -576,24 +583,31 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         } else {
             require(msg.sender == governance, "VAULT: not governance");
         }
+        // B-2 (Round 8): manage the fee-accrual anchor across the shutdown boundary so the
+        //   non-productive shutdown window is never billed (see _collectFees' shutdown freeze).
+        if (active) {
+            _collectFees();                          // crystallize fees earned BEFORE shutdown (still live)
+        } else {
+            _lastHarvestTimestamp = block.timestamp; // resume accrual from re-enable; waive the shutdown window
+        }
         // A: set the flag FIRST so shutdown always takes effect, then attempt the
         //    recall in try/catch. A frozen/broken adapter must not be able to brick
         //    the emergency valve. activeAdapter is unchanged, so on catch the funds
         //    stay counted in totalAssets() and are recoverable once the adapter
         //    unfreezes (users withdraw via _recallFromAdapter; deposits are blocked).
         emergencyShutdown = active;
-        if (active) {
-            // R8-1: clear any locked profit so totalAssets() is not artificially suppressed
-            //   during the emergency exit window. Shutdown waives the withdraw lock and
-            //   invites every holder to exit at once; leaving _lockedProfit set would price
-            //   early exiters against a suppressed NAV — an unfair intra-user redistribution
-            //   over the PROFIT_UNLOCK_PERIOD tail, occurring exactly when trust is lowest and
-            //   amplifiable by a permissionless harvest() that re-locks a fresh reward. Mirrors
-            //   the force-detach handling in setAdapter (address(0)). No-op for the current
-            //   auto-compounding adapters (harvest() delta is 0, so _lockedProfit is already 0).
-            _lockedProfit = 0;
-            _lastReport = block.timestamp;
-        }
+        // R8-1 (Round 8, revised): shutdown deliberately does NOT clear _lockedProfit.
+        //   Clearing it lifts totalAssets() by the locked amount in the same tx the guardian
+        //   broadcasts; that tx is mempool-visible, so an attacker front-runs it with a
+        //   deposit priced against the (still) suppressed NAV and redeems right after — the
+        //   withdraw lock is waived under shutdown — skimming the just-released profit that
+        //   belongs to existing holders. PoC (ProfitStreaming.t.sol::test_B1_shutdownJIT_*)
+        //   measured extraction up to the FULL locked profit (≈500 at equal stake, ≈990 for a
+        //   whale, per 1_000 reward). Retaining the linear unlock keeps extraction at 0: the
+        //   "suppressed" NAV during the exit rush IS the intended anti-JIT streaming behavior;
+        //   the profit stays in the vault (value-conserving) and vests to remaining holders
+        //   over PROFIT_UNLOCK_PERIOD. This is why shutdown differs from the force-detach path,
+        //   where the mark is realized against a departing adapter rather than opened to a JIT.
         if (active && activeAdapter != address(0)) {
             // Recall all assets to vault for safe withdrawal by users.
             // ADR-007 #1: read the mark defensively — a reverting totalAssets() (e.g. a

@@ -152,7 +152,12 @@ contract AaveV3USDCAdapter is IStrategyAdapter, ReentrancyGuard {
         require(assets > 0, "ADAPTER: zero amount");
         require(recipient != address(0), "ADAPTER: zero recipient");
         uint256 amount = assets >= aToken.balanceOf(address(this)) ? type(uint256).max : assets;
-        // Aave withdraws `amount` (or the full balance for max); returns actual withdrawn.
+        // Aave withdraws `amount` (or the full balance for max) and sends it DIRECTLY to
+        // `recipient` (the vault) — the funds never transit this adapter, so an adapter-side
+        // balance delta is not meaningful here. B-2 (Round 8): the returned `withdrawn` is NOT
+        // consumed for accounting anywhere (emitted only); the vault's _recallFromAdapter
+        // re-measures its OWN balance delta and enforces `received >= toWithdraw`, so a
+        // wrong/lying Aave return cannot mis-account or lose funds — it reverts one layer up.
         withdrawn = aavePool.withdraw(asset, amount, recipient);
         emit Withdrawn(assets, withdrawn, recipient);
     }

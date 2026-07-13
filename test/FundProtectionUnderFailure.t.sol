@@ -255,11 +255,14 @@ contract FundProtectionUnderFailureTest is Test {
         uint256 aliceGot = _redeemAll(v, alice);
         assertApproxEqRel(aliceGot, 10_000 * D, 1e14, "alice honest share");
 
-        // (c) a late-mover cannot force a below-mark fire-sale beyond the remaining liquidity:
-        //     the recall reverts rather than dumping a haircut on the last holder.
+        // (c) ADR-007 柱1: a late-mover gets an honest partial-fill of the remaining liquidity —
+        //     which is 0 right now — with NO revert and NO fire-sale haircut. Bob is not stranded;
+        //     nothing burns and he keeps his full claim as shares to recover when liquidity returns.
+        uint256 bobShares = v.balanceOf(bob);
         vm.prank(bob);
-        vm.expectRevert(bytes("VAULT: adapter shortfall"));
-        v.withdraw(10_000 * D, bob, bob);
+        uint256 bobEarly = v.redeem(bobShares, bob, bob);
+        assertEq(bobEarly, 0, "no liquidity now -> zero cash, no fire-sale");
+        assertEq(v.balanceOf(bob), bobShares, "no shares burned; full pro-rata claim retained");
 
         // (b) illiquidity is NOT a loss: NAV intact for the two remaining holders (20k).
         assertApproxEqRel(v.totalAssets(), 20_000 * D, 1e14, "illiquidity must not be a loss");
@@ -287,10 +290,13 @@ contract FundProtectionUnderFailureTest is Test {
         // Post-deploy bug: the adapter can now only realize 50% of its mark on withdraw.
         a.setDeliverBps(5_000);
 
-        // (c) nobody can escape whole ahead of the writeoff: a full-value withdraw reverts.
+        // (c) nobody can grab MORE than their pro-rata mark share ahead of the writeoff: an
+        //     over-cap withdraw still reverts on the ERC-4626 max guard. (A within-cap exit would
+        //     merely partial-fill to the realizable 50% — no revert, no fire-sale — but we leave
+        //     the pool intact here so the force-detach writeoff below splits equally.)
         vm.prank(alice);
-        vm.expectRevert(bytes("VAULT: adapter shortfall"));
-        v.withdraw(10_000 * D, alice, alice);
+        vm.expectRevert(); // ERC4626ExceededMaxWithdraw
+        v.withdraw(15_000 * D, alice, alice);
 
         // (d) the emergency valve is never bricked by the adapter: even when totalAssets()
         //     reverts, shutdown still toggles (brick-proof).

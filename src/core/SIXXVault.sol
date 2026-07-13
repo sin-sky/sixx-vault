@@ -5,6 +5,7 @@ import {ERC4626} from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.so
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ISIXXVault} from "../interfaces/ISIXXVault.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
@@ -140,18 +141,39 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         return super.mint(shares, receiver);
     }
 
+    /// @dev ADR-007 (design c): exits are honest partial-fills clamped to the caller's pro-rata
+    ///      of realizable liquidity. They NEVER revert on an adapter shortfall (柱1); each caller
+    ///      is capped at its pro-rata share so no early exiter can monopolize idle/realizable
+    ///      liquidity (柱3); only the shares matching the cash actually paid are burned, so any
+    ///      unpaid remainder is retained as ordinary share = a durable pro-rata claim (柱4).
+    ///      The return value is the ACTUAL payout (may be < previewWithdraw under impairment —
+    ///      an upper estimate that never over-delivers is preferred to an ERC-4626-exact preview).
     function withdraw(uint256 assets, address receiver, address owner)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         _collectFees();
-        return super.withdraw(assets, receiver, owner);
+        // ERC-4626 compliance: same custom error super.withdraw would raise (lock surfaces here
+        //   because maxWithdraw returns 0 while locked, H-4).
+        uint256 maxAssets = maxWithdraw(owner);
+        if (assets > maxAssets) revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
+        if (!emergencyShutdown) require(block.timestamp >= _lockedUntil[owner], "VAULT: still locked");
+        uint256 shares = previewWithdraw(assets);
+        (uint256 payout, uint256 sBurn) = _exitRealize(assets, shares);
+        _completeExit(_msgSender(), receiver, owner, payout, sBurn);
+        return payout;
     }
 
     function redeem(uint256 shares, address receiver, address owner)
         public override(ERC4626, IERC4626) nonReentrant returns (uint256)
     {
         _collectFees();
-        return super.redeem(shares, receiver, owner);
+        uint256 maxShares = maxRedeem(owner);
+        if (shares > maxShares) revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
+        if (!emergencyShutdown) require(block.timestamp >= _lockedUntil[owner], "VAULT: still locked");
+        uint256 assets = convertToAssets(shares);
+        (uint256 payout, uint256 sBurn) = _exitRealize(assets, shares);
+        _completeExit(_msgSender(), receiver, owner, payout, sBurn);
+        return payout;
     }
 
     // =========================================
@@ -167,7 +189,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         //   valuation (broken oracle / not-ready TWAP) would otherwise brick every exit.
         //   On read failure, degrade to the last booked debt (_totalDebt) so reads stay
         //   live and users can always exit against whatever the adapter can realize; the
-        //   _recallFromAdapter shortfall guard still protects accounting on the actual pull.
+        //   honest partial-fill exit (_exitRealize) pays only what is actually recalled.
         uint256 adapterAssets;
         if (activeAdapter != address(0)) {
             try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 a) {
@@ -288,19 +310,78 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         _deployToAdapter();
     }
 
-    function _withdraw(
-        address caller,
-        address receiver,
-        address owner,
-        uint256 assets,
-        uint256 shares
-    ) internal override {
-        // B: emergency shutdown waives the lock so users can withdraw immediately.
-        if (!emergencyShutdown) {
-            require(block.timestamp >= _lockedUntil[owner], "VAULT: still locked");
+    /// @dev ADR-007 (design c) exit core. Recall the caller's PRO-RATA slice of the adapter
+    ///      honestly (best-effort, NEVER revert), pay pro-rata idle + what was realized, and
+    ///      compute the shares to burn from the cash actually paid.
+    /// @param requestedAssets the caller's mark-based claim (redeem) or requested amount (withdraw)
+    /// @param shares          the shares the caller offered to burn (upper bound on sBurn)
+    /// @return payout the cash actually delivered (<= requestedAssets); may be a partial fill
+    /// @return sBurn  shares to burn == convertToShares(payout), capped at `shares` (residual kept)
+    function _exitRealize(uint256 requestedAssets, uint256 shares)
+        internal
+        returns (uint256 payout, uint256 sBurn)
+    {
+        uint256 supply = totalSupply();
+        uint256 idle0 = IERC20(asset()).balanceOf(address(this));
+        // 柱3: the caller may draw at most its pro-rata of idle — never the whole idle buffer.
+        uint256 idleShare = supply == 0 ? idle0 : Math.mulDiv(idle0, shares, supply);
+
+        uint256 fromAdapter;
+        if (activeAdapter != address(0)) {
+            // F-2 (H-02 regression / 柱1): if the adapter's valuation reverts, degrade the mark to
+            //   the last booked debt (_totalDebt) — the SAME fallback totalAssets() uses — so a
+            //   broken oracle never zeroes the recall and strands funds behind a still-working
+            //   withdraw. mark=0 here would revive the very exit-bricking H-02 fixed elsewhere.
+            uint256 mark;
+            try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 a) { mark = a; } catch { mark = _totalDebt; }
+            // 柱3: cap the recall at the caller's pro-rata slice of the mark. F-3 (INV-3): also cap
+            //   at what is actually NEEDED to pay the request (requestedAssets - idleShare). The mark
+            //   can exceed the realizable NAV by the still-locked profit (totalAssets subtracts
+            //   lockedProfit, the recall does not); recalling the raw pro-rata would pull that
+            //   locked slice into idle where it strands and breaks non-custody-no-idle.
+            uint256 wantAdapter;
+            if (supply != 0) {
+                uint256 proRata = Math.mulDiv(mark, shares, supply);
+                uint256 need = requestedAssets > idleShare ? requestedAssets - idleShare : 0;
+                wantAdapter = proRata < need ? proRata : need;
+            }
+            if (wantAdapter > 0) {
+                uint256 balBefore = idle0;
+                // 柱1: honest partial-fill — pull best-effort and NEVER revert on a shortfall.
+                //   The realized delta (not the adapter's word) is the source of truth (M13-16).
+                try IStrategyAdapter(activeAdapter).withdraw(wantAdapter, address(this)) {} catch {}
+                uint256 balNow = IERC20(asset()).balanceOf(address(this));
+                fromAdapter = balNow > balBefore ? balNow - balBefore : 0;
+                _totalDebt = _totalDebt > fromAdapter ? _totalDebt - fromAdapter : 0;
+            }
         }
-        _recallFromAdapter(assets);
-        super._withdraw(caller, receiver, owner, assets, shares);
+
+        // Pro-rata of realizable liquidity actually on hand for this caller.
+        uint256 realizable = idleShare + fromAdapter;
+        payout = requestedAssets < realizable ? requestedAssets : realizable;
+
+        if (payout >= requestedAssets) {
+            sBurn = shares; // full fill → burn exactly what was offered
+        } else {
+            // Partial fill: burn only the shares matching the cash paid (Ceil = protocol-favour,
+            // so a partial exiter can never dust-burn too few shares for the cash received).
+            sBurn = _convertToShares(payout, Math.Rounding.Ceil);
+            if (sBurn > shares) sBurn = shares; // 柱4: residual = shares - sBurn stays as the claim
+        }
+    }
+
+    /// @dev Burn the resolved shares (allowance charged on sBurn, not the offered shares) and
+    ///      deliver the cash. H-2: burns are lock-exempt in _update; the caller's lock was
+    ///      already checked in withdraw/redeem.
+    function _completeExit(address caller, address receiver, address owner, uint256 payout, uint256 sBurn)
+        internal
+    {
+        if (caller != owner) {
+            _spendAllowance(owner, caller, sBurn);
+        }
+        _burn(owner, sBurn);
+        IERC20(asset()).safeTransfer(receiver, payout);
+        emit Withdraw(caller, receiver, owner, payout, sBurn);
     }
 
     /// @dev H-2: Block share transfers between users while sender is locked.
@@ -343,37 +424,6 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         require(msg.sender == address(this), "VAULT: self only");
         IERC20(asset()).safeTransfer(adapter, amount);
         IStrategyAdapter(adapter).deposit(amount);
-    }
-
-    /// @dev Pull at least `assets` back to the vault from the adapter
-    function _recallFromAdapter(uint256 assets) internal {
-        uint256 idle = IERC20(asset()).balanceOf(address(this));
-        if (idle >= assets) return;
-        if (activeAdapter == address(0)) return;
-
-        uint256 needed = assets - idle;
-        // H-02 (3rd review): don't let a reverting totalAssets() brick the exit. If the
-        //   mark reads, cap the pull at the marked available (avoid over-requesting); if it
-        //   reverts, fall back to a best-effort pull of exactly `needed` — the adapter's own
-        //   withdraw enforces its real capacity and the received>=toWithdraw guard below
-        //   still protects accounting. Read-failure is never a reason to freeze withdrawals.
-        uint256 toWithdraw = needed;
-        try IStrategyAdapter(activeAdapter).totalAssets() returns (uint256 available) {
-            if (needed > available) toWithdraw = available;
-        } catch {
-            // mark unreadable → attempt the full `needed` best-effort
-        }
-        if (toWithdraw == 0) return;
-
-        // M13-16: don't trust the adapter's return value blindly — measure the actual
-        //         balance delta and require it covers the request, so an adapter that
-        //         silently under-delivers reverts here (explicit) instead of causing a
-        //         confusing shortfall later. Accounting stays sourced from real balance.
-        uint256 balBefore = IERC20(asset()).balanceOf(address(this));
-        IStrategyAdapter(activeAdapter).withdraw(toWithdraw, address(this));
-        uint256 received = IERC20(asset()).balanceOf(address(this)) - balBefore;
-        require(received >= toWithdraw, "VAULT: adapter shortfall");
-        _totalDebt = _totalDebt > received ? _totalDebt - received : 0;
     }
 
     // =========================================
@@ -594,7 +644,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         //    recall in try/catch. A frozen/broken adapter must not be able to brick
         //    the emergency valve. activeAdapter is unchanged, so on catch the funds
         //    stay counted in totalAssets() and are recoverable once the adapter
-        //    unfreezes (users withdraw via _recallFromAdapter; deposits are blocked).
+        //    unfreezes (users withdraw via the honest partial-fill exit; deposits are blocked).
         emergencyShutdown = active;
         // R8-1 (Round 8, revised): shutdown deliberately does NOT clear _lockedProfit.
         //   Clearing it lifts totalAssets() by the locked amount in the same tx the guardian

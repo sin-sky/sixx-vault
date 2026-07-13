@@ -14,11 +14,13 @@ contract E1USDC is ERC20 {
     function decimals() public pure override returns (uint8) { return 6; }
 }
 
-/// @title E1 — measure the first-come advantage on a run (ADR-007 柱3/柱4 gap probe)
-/// @notice PURE MEASUREMENT. No production src changes. Establishes, with numbers, whether the
-///         current "idle-first + just-enough recall + require(received>=toWithdraw)" path lets
-///         early exiters monopolize liquidity and strand late exiters, or whether honest-NAV
-///         markdown keeps everyone whole. Structural redesign is forbidden until these run.
+/// @title E1 — run/first-come behavior of the IMPLEMENTED ADR-007 exit (柱1/柱3/柱4 regression)
+/// @notice Originally the pre-implementation gap probe; now that ADR-007 (design c: pro-rata
+///         upper-clamp + honest partial-fill + residual shares, mark-price burn per SHIN
+///         2026-07-13) is implemented, these cases regression-lock the achieved behavior:
+///         NOBODY is stranded on any adapter failure mode (柱1), honest markdown/force-detach
+///         give flat payouts (柱2/柱3), and the residual first-mover skew under an overstated
+///         mark is bounded (quantified in test/ExitSkewM1.t.sol → bounded by e).
 contract ExitFairnessE1Test is Test {
     E1USDC          usdc;
     AdapterRegistry registry;
@@ -97,20 +99,25 @@ contract ExitFairnessE1Test is Test {
     function test_E1_A_partialUnderDelivery_markOverstates() public {
         adapter.setDeliverBps(5_000); // realizable = 50% of mark
         Outcome memory o = _run("CASE A: partial under-delivery (deliverBps=50%, mark unchanged)");
-        // First-come advantage: user1 (served from idle) takes full cash; late users revert.
-        assertGt(o.received[0], 0, "A: first user took cash");
-        assertGt(o.stuckCount, 0, "A: at least one late user stranded");
-        // Price mark is untouched → stranded users still 'own' D on paper but cannot realize it.
-        emit log_named_uint("  first/last received ratio x1e4",
-            o.received[N-1] == 0 ? type(uint256).max : (o.received[0] * 1e4) / o.received[N-1]);
+        // ADR-007 柱1: honest partial-fill strands NOBODY, even with an overstated mark.
+        assertEq(o.stuckCount, 0, "A: no exiter stranded (honest partial-fill)");
+        assertEq(o.cashOut, N, "A: every exiter took some cash");
+        // 柱3: the residual first-mover skew is bounded (quantified as < e in ExitSkewM1). Here it
+        //   must at least stay well under 2x for deliver=50% (measured ~1.10x).
+        uint256 skewX1e4 = o.received[N-1] == 0 ? type(uint256).max : (o.received[0] * 1e4) / o.received[N-1];
+        emit log_named_uint("  first/last received ratio x1e4", skewX1e4);
+        assertLt(skewX1e4, 20_000, "A: bounded skew, not first-come monopoly");
     }
 
     // ── Case B: adapter fully bricked (withdraw reverts) ──
     function test_E1_B_fullyBricked_withdrawReverts() public {
         adapter.setRevertOnWithdraw(true);
         Outcome memory o = _run("CASE B: fully bricked (withdraw reverts)");
-        // Only the idle buffer is distributable; whoever's redeem fits in idle escapes, rest stuck.
-        assertGt(o.stuckCount, 0, "B: users stranded behind a bricked adapter");
+        // 柱1: the adapter withdraw reverts, but the vault catches it (fromAdapter=0) and each
+        //   exiter still draws its pro-rata slice of the idle buffer — nobody is stranded, and
+        //   the unrealized remainder is retained as residual shares (柱4).
+        assertEq(o.stuckCount, 0, "B: bricked adapter strands nobody (idle pro-rata + residual)");
+        assertEq(o.cashOut, N, "B: every exiter took some idle-backed cash");
     }
 
     // ── Case C: HONEST loss — adapter burns 50% of its holdings (mark drops with realizable) ──
@@ -146,9 +153,10 @@ contract ExitFairnessE1Test is Test {
         vault.setEmergencyShutdown(true); // recalls what it can (best-effort), waives locks
         Outcome memory o = _run("CASE E: shutdown mass exit (adapter delivers 50%)");
         emit log_named_uint("  totalAssets after exits", vault.totalAssets());
-        // Shutdown tops up idle with a best-effort recall, but the adapter stays attached with a
-        // still-overstated mark → once the topped-up idle is drained, late exiters STILL revert.
-        assertGt(o.cashOut, 0, "E: shutdown lets the front of the queue exit");
-        assertGt(o.stuckCount, 0, "E: shutdown+partial still strands the tail (mark not written down)");
+        // ADR-007: shutdown tops up idle with a best-effort recall AND every exit is an honest
+        //   partial-fill — so even with a still-overstated mark the tail is NOT stranded; each
+        //   exiter takes its pro-rata slice and retains residual shares for the rest (柱1/柱4).
+        assertEq(o.stuckCount, 0, "E: shutdown + partial-fill strands nobody");
+        assertEq(o.cashOut, N, "E: every exiter took some cash under shutdown");
     }
 }

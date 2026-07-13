@@ -443,12 +443,13 @@ contract ThreatCouncilRemainingTest is Test {
         FaultyAdapter f = _swapToFaulty();
         f.setDeliverBps(8_000); // adapter only returns 80% of any recall → realizable < mark
 
-        // Alice's full-value withdraw reverts on the shortfall guard.
+        // ADR-007 柱1: Alice's full-value withdraw is NOT paused by the shortfall — it partial-fills
+        //   to the realizable ~80% with no revert (the old "VAULT: adapter shortfall" brick is gone).
         uint256 aliceAssets = vault.previewRedeem(vault.balanceOf(alice));
-        vm.startPrank(alice);
-        vm.expectRevert("VAULT: adapter shortfall");
-        vault.withdraw(aliceAssets, alice, alice);
-        vm.stopPrank();
+        vm.prank(alice);
+        uint256 aliceEarly = vault.withdraw(aliceAssets, alice, alice);
+        assertApproxEqRel(aliceEarly, (aliceAssets * 8_000) / 10_000, 0.02e18, "partial-fill ~80%, not paused");
+        assertGt(vault.balanceOf(alice), 0, "unfilled remainder kept as residual shares (not stuck)");
 
         // Governance force-detaches: best-effort recall books the realized 80%.
         vm.prank(governance);

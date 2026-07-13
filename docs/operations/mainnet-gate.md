@@ -40,7 +40,9 @@
 ## G3. 退出/緊急経路の実機確認
 
 - [ ] `setAdapter(address(0))`（force-detach）と `setEmergencyShutdown(true)` の権限保有者が正しい鍵（guardian/gov）であること。
-- [ ] デペグ runbook（Ethena/Pendle exit 床 revert 時の手順）が運用手順書に存在。
+- [ ] デペグ runbook（Ethena/Pendle exit 床 revert 時の手順）が運用手順書に存在
+      → **`docs/operations/depeg-mark-staleness-runbook.md`**（ADR-007 残余の運用防御：検知シグナル A/B/C・
+      WARN/ACT 閾値・force-detach 手順・30 分レイテンシ予算）。§5 のライブ監視実装と expedited detach 経路が未了なら本ゲート保留。
 - [ ] **F-2（NAV × 可変 slippage 裁定の運用緩和・Ethena/haircut 連動 adapter 該当時）**：
   - [ ] 当該 vault の `lockPeriod` を **非ゼロに設定**（`setLockPeriod`）。`EthenaSUSDeAdapter.totalAssets()` は
     可変 `slippageBps` に連動するため、`slippageBps` を絞る（例 300→50）と NAV が単一 tx で最大 ~2.5% 跳ねる。

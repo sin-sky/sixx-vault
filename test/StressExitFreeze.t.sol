@@ -67,14 +67,20 @@ contract StressExitFreezeTest is Test {
         vm.stopPrank();
     }
 
-    /// #1 — Under a 1% realizable shortfall, a normal user cannot exit at all.
-    function test_stress_userExit_bricks_whenRealizableBelowMark() public {
+    /// #1 — ADR-007 柱1: under a 1% realizable shortfall a user exit is an honest PARTIAL FILL,
+    ///      NOT a brick. The old "VAULT: adapter shortfall" revert is gone — the caller receives
+    ///      the realizable ~99% and keeps the unrealized ~1% as residual shares (durable claim).
+    function test_stress_userExit_partialFills_whenRealizableBelowMark() public {
         faulty.setDeliverBps(9_900); // realizable = 99% of NAV mark
 
         uint256 shares = vault.balanceOf(alice);
+        uint256 balBefore = usdc.balanceOf(alice);
         vm.prank(alice);
-        vm.expectRevert(bytes("VAULT: adapter shortfall"));
-        vault.redeem(shares, alice, alice); // <-- FROZEN: user's own funds are stuck
+        uint256 payout = vault.redeem(shares, alice, alice); // must NOT revert (no brick)
+
+        assertEq(usdc.balanceOf(alice) - balBefore, payout, "receives the actual cash delivered");
+        assertApproxEqRel(payout, (AMOUNT * 9_900) / 10_000, 0.01e18, "~99% realizable delivered");
+        assertGt(vault.balanceOf(alice), 0, "residual ~1% retained as a claim, never stuck");
     }
 
     /// #2 — ADR-007 #1 FIX: governance can force-detach (setAdapter(0)) even under a

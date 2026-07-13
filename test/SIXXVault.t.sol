@@ -265,7 +265,12 @@ contract SIXXVaultTest is Test {
     }
 
     /// M13-16: recall reverts if the adapter silently under-delivers.
-    function test_recall_reverts_on_adapter_shortfall() public {
+    /// ADR-007 柱1/柱4: a user-exit against an under-delivering adapter is an honest
+    ///   PARTIAL FILL — it must NOT revert. The caller is paid the realizable slice and
+    ///   retains the unpaid remainder as residual shares (a durable pro-rata claim).
+    ///   (Contrast: the setAdapter MIGRATION recall still reverts on shortfall — see
+    ///    test_setAdapter_reverts_on_adapter_shortfall; only the user-exit path changed.)
+    function test_exit_partialFills_onAdapterShortfall_noRevert() public {
         FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
         vm.startPrank(governance);
         registry.registerAdapter(address(faulty), "Test", "Faulty");
@@ -278,11 +283,20 @@ contract SIXXVaultTest is Test {
         uint256 shares = vault.deposit(amount, alice);
         vm.stopPrank();
 
-        faulty.setDeliverBps(9_000); // deliver only 90% of what is requested
+        faulty.setDeliverBps(9_000); // adapter delivers only 90% of what is requested
 
+        uint256 before = usdc.balanceOf(alice);
         vm.prank(alice);
-        vm.expectRevert(bytes("VAULT: adapter shortfall"));
-        vault.redeem(shares, alice, alice);
+        uint256 payout = vault.redeem(shares, alice, alice); // must NOT revert (柱1)
+
+        // Partial fill: ~90% of the deposit realized, delivered honestly.
+        assertEq(usdc.balanceOf(alice) - before, payout, "returns actual cash delivered");
+        assertApproxEqRel(payout, (amount * 9_000) / 10_000, 0.01e18, "~90% realizable paid");
+        assertLt(payout, amount, "partial fill is below the mark-based claim");
+        // 柱4: the unpaid ~10% is retained as residual shares, not lost, not stranded.
+        uint256 residual = vault.balanceOf(alice);
+        assertGt(residual, 0, "residual shares retained as a pro-rata claim");
+        assertApproxEqRel(residual, shares / 10, 0.05e18, "residual ~10% of offered shares");
     }
 
     /// Medium-A: setAdapter migration applies the same M13-16 balance-delta guard

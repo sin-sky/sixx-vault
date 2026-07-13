@@ -390,9 +390,39 @@ PY
 
   # ─── Stage 9: fork suites (opt-in) ──────────────────────────
   if [ "$RUN_FORK" = "1" ]; then
-    banner "Stage 9 — fork suites (needs real RPC)"
-    forge test --match-contract "Fork" > "$REPORTS/fork.log" 2>&1 \
-      && record "fork" "PASS" "" || record "fork" "WARN" "(fork run failed — check RPC/.env)"
+    banner "Stage 9 — fork suites (per-chain --fork-url; needs real RPC)"
+    # Fork suites span 3 chains and several (Aave ARB/ETH, Venus) rely on the CLI --fork-url
+    #   rather than createSelectFork, so a single `forge test --match-contract Fork` cannot fork
+    #   them all (and forks only one chain). Run each suite against ITS chain's RPC.
+    #   VenusUSDTAdapterForkTest reads BNB_RPC_URL — alias it to BSC_RPC_URL when only that is set.
+    export BNB_RPC_URL="${BNB_RPC_URL:-${BSC_RPC_URL:-}}"
+    : > "$REPORTS/fork.log"
+    fork_fail=0; fork_pass=0
+    fork_one() { # $1=contract $2=rpc-var-name
+      local c="$1" rv="$2"; local url="${!rv:-}"
+      echo "────── $c via $rv ──────" >> "$REPORTS/fork.log"
+      if [ -z "$url" ] || printf '%s' "$url" | grep -q 'invalid'; then
+        echo "  SKIP (no real $rv set)" >> "$REPORTS/fork.log"; return
+      fi
+      if forge test --fork-url "$url" --match-contract "$c" >> "$REPORTS/fork.log" 2>&1; then
+        fork_pass=$((fork_pass+1)); echo "  PASS $c" >> "$REPORTS/fork.log"
+      else
+        fork_fail=$((fork_fail+1)); echo "  FAILED $c" >> "$REPORTS/fork.log"
+      fi
+    }
+    fork_one AaveV3AdapterForkTest          ARB_RPC_URL
+    fork_one AaveV3AdapterEthForkTest       ETH_RPC_URL
+    fork_one VenusUSDTAdapterForkTest       BNB_RPC_URL
+    fork_one EthenaSUSDeAdapterForkTest     ETH_RPC_URL
+    fork_one PendlePTAdapterForkTest        ETH_RPC_URL
+    fork_one EthenaLargeExitGracefulForkTest ETH_RPC_URL
+    if [ "$fork_fail" -gt 0 ]; then
+      record "fork" "WARN" "($fork_fail fork suite(s) failed/RPC — see reports/fork.log; $fork_pass passed)"
+    elif [ "$fork_pass" -eq 0 ]; then
+      record "fork" "SKIP" "(no real RPC for any chain — set ETH/ARB/BNB_RPC_URL)"
+    else
+      record "fork" "PASS" "$fork_pass/6 fork suites green (per-chain, real RPC)"
+    fi
   fi
 fi
 

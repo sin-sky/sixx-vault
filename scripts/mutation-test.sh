@@ -41,6 +41,18 @@ cp "$TARGET" "$BACKUP"
 restore() { cp "$BACKUP" "$TARGET"; rm -f "$BACKUP"; }
 trap restore EXIT INT TERM
 
+# ─── Concurrent-edit tripwire (S0-2, 2026-07-13) ──────────────
+# This harness intentionally swaps a mutant into $TARGET each iteration and restores it, so a
+# whole-tree freeze check would false-trip on our own work. Instead we hash every source .sol
+# EXCEPT $TARGET before and after the whole run: if any OTHER source file changes, a second
+# session edited the tree mid-run and every mutant verdict is contaminated → abort (exit 5).
+nontarget_hash() {
+  find "$REPO_ROOT/src" "$REPO_ROOT/test" "$REPO_ROOT/script" -type f -name '*.sol' 2>/dev/null \
+    | grep -vF "$REPO_ROOT/$TARGET" | LC_ALL=C sort \
+    | while IFS= read -r f; do sha256sum "$f"; done | sha256sum | awk '{print $1}'
+}
+NT_START="$(nontarget_hash)"
+
 # ─── Pre-flight canary (S0-3, 2026-07-12): the classifier invocation MUST be sound ───
 # Root-cause fix for the `--match-contract '*'` false-kill class. The per-mutant classifier
 # is "did `forge test <filters>` pass?". If that invocation is broken, every mutant is
@@ -101,6 +113,17 @@ for id in $IDS; do
   fi
   cp "$BACKUP" "$TARGET"   # restore between mutants
 done
+
+# ─── Concurrent-edit tripwire: did a second session edit a NON-target source mid-run? ──
+NT_END="$(nontarget_hash)"
+if [ "$NT_START" != "$NT_END" ]; then
+  echo "CONCURRENT-EDIT ABORT (exit 5): a non-target source file changed during the mutation run."
+  echo "  start=$NT_START  end=$NT_END"
+  echo "  A second session edited src/ while mutants were being classified. Every verdict above is"
+  echo "  contaminated and the score is DISCARDED. Re-run in a dedicated isolated worktree."
+  exit 5
+fi
+echo "==> concurrent-edit tripwire: non-target sources unchanged ($NT_END) — run not contaminated."
 
 TOTAL=$((KILLED+SURVIVED))
 if [ "$TOTAL" -gt 0 ]; then

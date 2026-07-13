@@ -92,5 +92,45 @@ echo "== F: SOUND invocation → pre-flight PASSES (then stops at fake gambit) =
 code="$(run_mut ok)"
 if grep -q "Pre-flight OK" "$TMP/mut.ok.log" && [ "$code" = "3" ]; then ok "pre-flight passed on a sound invocation (stopped at gambit, exit 3)"; else bad "pre-flight mis-fired on a sound invocation (exit=$code) — see $TMP/mut.ok.log"; fi
 
+# ── Fixtures G–K: 2026-07-13 hardening — isolation + concurrent-edit tripwire ──
+# These pin the STRUCTURAL fix for the shared-working-tree root cause: measurement may run
+# only in a dedicated linked worktree, and src must stay frozen for the whole run.
+RUNNER="$REPO_ROOT/scripts/guarded-analysis.sh"
+
+echo "== G: --require-isolated → FAIL in the main tree, PASS in a linked worktree =="
+RG="$TMP/isomain"; mkrepo "$RG"
+if bash "$GUARD" --require-isolated "$RG" >/dev/null 2>&1; then bad "guard passed --require-isolated in a MAIN tree (should refuse)"; else ok "guard refused --require-isolated in the shared main tree"; fi
+WG="$TMP/isowt"
+if git -C "$RG" worktree add -q --detach "$WG" >/dev/null 2>&1; then
+  if bash "$GUARD" --require-isolated "$WG" >/dev/null 2>&1; then ok "guard passed --require-isolated in a linked worktree"; else bad "guard refused --require-isolated in a legit linked worktree (false positive)"; fi
+else
+  bad "could not create a linked worktree for the isolation test"
+fi
+
+echo "== H: guarded-analysis → exit 5 when the command edits src MID-RUN (concurrent writer) =="
+# Command touches a NON-target src file while 'running' — simulates the 2nd session's edit.
+out="$(cd "$WG" && GUARDED_ANALYSIS_ROOT="$WG" REQUIRE_ISOLATED_WORKTREE=1 bash "$RUNNER" testH -- bash -c 'echo "// concurrent edit" >> src/C.sol' 2>&1)"; code=$?
+if [ "$code" = "5" ] && echo "$out" | grep -q "SOURCE CHANGED MID-RUN"; then ok "detected mid-run src edit and discarded results (exit 5)"; else bad "did NOT catch a mid-run src edit (exit=$code) — concurrent-contamination class not caught"; fi
+git -C "$WG" checkout -q -- src 2>/dev/null || true   # undo the simulated edit for later fixtures
+
+echo "== I: guarded-analysis → PASS when src is untouched for the whole run =="
+out="$(cd "$WG" && GUARDED_ANALYSIS_ROOT="$WG" REQUIRE_ISOLATED_WORKTREE=1 bash "$RUNNER" testI -- bash -c 'sleep 0; true' 2>&1)"; code=$?
+if [ "$code" = "0" ] && echo "$out" | grep -q "tree frozen for the whole run"; then ok "passed when nobody touched src"; else bad "false positive on an untouched tree (exit=$code): $out"; fi
+
+echo "== J: --allow-target excludes the mutated file but STILL catches edits to OTHER files =="
+mkdir -p "$WG/src"; echo "contract D {}" > "$WG/src/D.sol"; git -C "$WG" add -A; git -C "$WG" commit -qm addD
+# Editing the ALLOWED target only → PASS (mutation harness legitimately mutates its target).
+out="$(cd "$WG" && GUARDED_ANALYSIS_ROOT="$WG" REQUIRE_ISOLATED_WORKTREE=1 bash "$RUNNER" testJ1 --allow-target src/C.sol -- bash -c 'echo "//m" >> src/C.sol' 2>&1)"; code=$?
+if [ "$code" = "0" ]; then ok "--allow-target ignores an edit to the target file"; else bad "--allow-target wrongly tripped on its own target (exit=$code)"; fi
+git -C "$WG" checkout -q -- src 2>/dev/null || true
+# Editing a DIFFERENT src file while target is allowed → still exit 5.
+out="$(cd "$WG" && GUARDED_ANALYSIS_ROOT="$WG" REQUIRE_ISOLATED_WORKTREE=1 bash "$RUNNER" testJ2 --allow-target src/C.sol -- bash -c 'echo "//x" >> src/D.sol' 2>&1)"; code=$?
+if [ "$code" = "5" ]; then ok "--allow-target still catches an edit to a NON-target file (exit 5)"; else bad "--allow-target missed an edit to a non-target file (exit=$code)"; fi
+git -C "$WG" checkout -q -- src 2>/dev/null || true
+
+echo "== K: guarded-analysis → exit 6 when the tree is NOT clean/isolated at START =="
+out="$(cd "$RG" && GUARDED_ANALYSIS_ROOT="$RG" bash "$RUNNER" testK -- true 2>&1)"; code=$?   # RG is a main tree → not isolated
+if [ "$code" = "6" ]; then ok "refused to start on a non-isolated tree (exit 6)"; else bad "ran a measurement on a non-isolated tree (exit=$code)"; fi
+
 echo
 if [ "$fails" = "0" ]; then echo "measurement-guard: ALL PASS"; exit 0; else echo "measurement-guard: $fails FAILED"; exit 1; fi

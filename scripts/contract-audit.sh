@@ -66,6 +66,11 @@ ADERYN_MED_BASELINE="${ADERYN_MED_BASELINE:-0}"
 #   PRIMARY, authoritative static-analysis gate).
 ADERYN_ADVISORY="${ADERYN_ADVISORY:-0}"
 MUTATION_TARGET="${MUTATION_TARGET:-src/core/SIXXVault.sol}"
+# S0-2 (2026-07-13, structural fix): measurement must run in a DEDICATED linked worktree, not
+#   a working tree shared with another session. Default = enforce isolation. ALLOW_SHARED_TREE=1
+#   downgrades the isolation requirement to a loud WARN (single-session/CI where no other Claude
+#   session touches the tree) — the clean-tree + whole-run source-freeze checks still apply.
+ALLOW_SHARED_TREE="${ALLOW_SHARED_TREE:-0}"
 if [ "$QUICK" = "1" ]; then ECHIDNA_LIMIT=5000; fi
 
 REPORTS="$REPO_ROOT/reports"
@@ -157,14 +162,31 @@ fi
 # A mutated contract makes Slither/Aderyn/forge analyse code that is NOT the committed
 # source, silently corrupting every finding. This is a HARD gate: exit != 0 → FAIL, and
 # we refuse to proceed. Not swallowed (no `|| true`).
-banner "Stage 0a — clean-tree guard (no dirty src / mutation artifacts before analysis)"
-if bash "$REPO_ROOT/scripts/clean-tree-guard.sh" > "$REPORTS/clean-tree.log" 2>&1; then
-  record "clean-tree" "PASS" "src/ matches committed source; no mutation artifacts"
+banner "Stage 0a — clean-tree + isolation guard (no dirty src / mutation artifacts / shared tree)"
+CTG="$REPO_ROOT/scripts/clean-tree-guard.sh"
+# S0-2 hardening: require a dedicated isolated worktree by default. If ALLOW_SHARED_TREE=1, run
+# the plain guard (clean + artifacts) and WARN that isolation is unenforced.
+if [ "$ALLOW_SHARED_TREE" = "1" ]; then
+  ISO_FLAG=""; ISO_NOTE="isolation UNENFORCED (ALLOW_SHARED_TREE=1) — ensure no other session touches this tree"
 else
-  record "clean-tree" "FAIL" "(contaminated tree — refusing to analyse; see reports/clean-tree.log)"
-  cat "$REPORTS/clean-tree.log"
-  echo "Clean-tree guard tripped — commit/stash src changes and remove gambit_out/ (mutants), then re-run."
+  ISO_FLAG="--require-isolated"; ISO_NOTE="dedicated isolated worktree"
 fi
+if bash "$CTG" $ISO_FLAG > "$REPORTS/clean-tree.log" 2>&1; then
+  if [ "$ALLOW_SHARED_TREE" = "1" ]; then
+    record "clean-tree" "WARN" "clean + no artifacts, but $ISO_NOTE"
+  else
+    record "clean-tree" "PASS" "$ISO_NOTE; tree matches committed source; no mutation artifacts"
+  fi
+else
+  record "clean-tree" "FAIL" "(contaminated / non-isolated tree — refusing to analyse; see reports/clean-tree.log)"
+  cat "$REPORTS/clean-tree.log"
+  echo "Clean-tree/isolation guard tripped — run measurement in a dedicated 'git worktree' (see"
+  echo "docs/operations/ADR-008), commit/stash source changes, and remove gambit_out/ (mutants)."
+fi
+# S0-2: snapshot the source-input hash for a WHOLE-RUN freeze check. If any file changes during
+# the audit (a concurrent session editing src), the closing check FAILs and the run is void.
+SRC_HASH_START="$(bash "$CTG" --print-hash 2>/dev/null || echo UNKNOWN)"
+echo "  source-input hash at start: $SRC_HASH_START"
 
 # ─── Stage 1: build ───────────────────────────────────────────
 # Gated on FAILED so a tripped clean-tree guard (Stage 0a) aborts BEFORE build/analysis.
@@ -394,6 +416,20 @@ PY
     forge test --match-contract "Fork" > "$REPORTS/fork.log" 2>&1 \
       && record "fork" "PASS" "" || record "fork" "WARN" "(fork run failed — check RPC/.env)"
   fi
+fi
+
+# ─── Stage Z: whole-run source-freeze verification (S0-2, 2026-07-13) ──────────
+# The clean-tree guard (Stage 0a) proved the tree was clean at the START. This proves nobody
+# (e.g. a second Claude session sharing the tree) edited any source input WHILE the audit ran.
+# If the hash moved, every measurement above read a shifting tree and the whole run is VOID.
+banner "Stage Z — source-freeze verification (no concurrent edit during the audit)"
+SRC_HASH_END="$(bash "$CTG" --print-hash 2>/dev/null || echo UNKNOWN)"
+if [ "$SRC_HASH_START" = "UNKNOWN" ] || [ "$SRC_HASH_END" = "UNKNOWN" ]; then
+  record "src-frozen" "FAIL" "(could not hash source inputs — cannot prove the tree stayed frozen)"
+elif [ "$SRC_HASH_START" = "$SRC_HASH_END" ]; then
+  record "src-frozen" "PASS" "source inputs unchanged for the whole run ($SRC_HASH_END)"
+else
+  record "src-frozen" "FAIL" "(SOURCE CHANGED DURING THE AUDIT — start=$SRC_HASH_START end=$SRC_HASH_END; a concurrent writer contaminated every stage; run is VOID)"
 fi
 
 # ─── Summary ──────────────────────────────────────────────────

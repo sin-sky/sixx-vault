@@ -61,6 +61,8 @@ Other constraints:
 
 When adding a new adapter, mirror the `AaveV3USDCAdapter` pattern: store `vault` and `governance` as state, gate writes with `onlyVault`, expose live APY via the underlying protocol's rate oracle, and add both a unit suite (against a mock pool) and a fork suite.
 
+**Discrete-harvest adapters — mandatory re-verification (Round-8 v2 finding F-A1/E-2).** Every shipped adapter today has a *no-op* `harvest()` (auto-compounding), so `SIXXVault._lockedProfit` is permanently 0 and the profit-streaming path is dormant. If you add an adapter with a **discrete** (non-no-op) `harvest()` that jumps `_lockedProfit > 0`, you re-activate a latent trap: a last/sole holder who exits while `_lockedProfit > 0` is paid `totalAssets() − lockedProfit`, **stranding the locked profit** (it later vests to a JIT depositor who did not earn it; force-detach/shutdown deliberately preserve `_lockedProfit`, so they don't release it either). Before shipping any discrete-harvest adapter you MUST re-verify and add tests for: (a) the "supply→0 with `_lockedProfit>0`" drain (zero-out or pay-out the residual to the final exiter), and (b) JIT-deposit-after-harvest extraction (B-1). See `test/ProfitStreaming.t.sol`.
+
 
 ---
 

@@ -12,7 +12,18 @@ Harnesses: `test/ExitSkewM1.t.sol` (M-1), `test/ExitFairnessE1.t.sol` (productio
 
 ---
 
-## M-1 — first-mover skew as a function of mark overstate rate → **BOUNDED BY e (~2.718×)**
+## M-1 — first-mover skew as a function of mark overstate rate → **bounded by e ONLY for LINEAR delivery; UNBOUNDED for the real (convex/reverting) system**
+
+> ⚠️ **CORRECTED (Round-8 v2 independent audit, finding C-1/D-1/E-1, 2026-07-13).** The "bounded by
+> e (~2.718×)" result below is an **artifact of the measurement mock's PROPORTIONAL (linear)
+> delivery** (`FaultInjectingAdapter.deliverBps`), which throttles the first exiter too. It is **NOT
+> a property of the live vault.** Under a **convex** adapter (real Curve/Ethena: ~100% fill until
+> pool depth exhausts, then a cliff) the first-mover skew is **6.08×** (`ExitFairnessProdC`), and
+> under a **reverting valuation + realized loss** it is **∞** — first-mover takes 100%, last gets 0,
+> via the stale loss-blind `_totalDebt` fallback (`ExitSkewRevertFallbackC`). IN-WINDOW the skew is
+> **not code-bounded**; the **only** guarantee is governance **force-detach** (writes off
+> `_totalDebt` / socializes the loss → fair pro-rata). Everything below stands only as the
+> characterization of the linear-throttle model — do not cite it as a vault safety bound.
 
 Measured on the **real** `SIXXVault` ADR-007 exit path (mark-price burn), canonical run:
 idle = 30% of TVL, adapter mark = 70%, 5 equal holders each `redeem` all shares in order.
@@ -66,12 +77,14 @@ finite-idle approximation). `skew(N)` is increasing in N with supremum
 lim_{N→∞} (1 − 1/N)^−(N−1) = e ≈ 2.71828
 ```
 
-**Conclusion (M-1):** the first-mover advantage from the retained mark-price burn is **provably
-bounded by e ≈ 2.72×** (first-of-queue vs last-of-queue) across *all* overstate rates, *all* idle
-fractions, and *all* N. The mechanism that causes the skew (mark-price under-burn → residual
-shares) is the same one that bounds it: residual shares keep `totalSupply` high, so the pro-rata
-denominator never collapses and late exiters always retain a real slice. Regression-locked in
-`test/ExitSkewM1.t.sol` (`assertLt(skew, e)` on every sweep point + closed-form anchor test).
+**Conclusion (M-1) — FOR THE LINEAR-DELIVERY MODEL ONLY (see §-top CORRECTION):** with the mock's
+*proportional* delivery, the first-mover advantage is bounded by e ≈ 2.72× across all overstate
+rates, idle fractions, and N, because throttling the first exiter too keeps `totalSupply` high so
+late exiters retain a real slice. **This does NOT hold for the live vault:** a convex adapter breaks
+the "throttle the first exiter too" premise (early exiters clear at ~100%), so the skew is unbounded
+(finding C-1). Regression-locked as a LINEAR-MODEL characterization in `test/ExitSkewM1.t.sol`; the
+unbounded convex/reverting reality is locked in `test/ExitFairnessProdC.t.sol` (6.08×) and
+`test/ExitSkewRevertFallbackC.t.sol` (∞ + force-detach cure).
 
 > Framing for the residual-risk register (M-3): the skew is a *bounded value-timing* effect, not an
 > unbounded drain. It is 1.0× (no skew) whenever the mark is honest (E1 Case C/D: flat payouts),
@@ -119,7 +132,12 @@ realizes cash. Result: the four adapters fall into two structural classes.
   ≥ 15 min and the par-cap blocks over-marking above par (but not a depeg *below* par).
 - On a depeg **deeper than the buffer**, each adapter's own `withdraw` `min_dy` **reverts**; the
   vault wraps that recall in try/catch (`_exitRealize`), so `fromAdapter = 0` and the exit degrades
-  to the caller's **idle pro-rata** — precisely the M-1 `deliverBps → 0` point ⇒ skew bounded by e.
+  to the caller's **idle pro-rata**. This is fair (bounded) **only if the withdraw reverts UNIFORMLY
+  for every exiter** (a deep, whole-pool depeg). ⚠️ In the **convex** regime (moderate depeg / depth
+  limit) early exiters clear at ~mark while only later/bigger exits revert → unbounded first-mover
+  skew (finding C-1, `ExitFairnessProdC` 6.08×); and if the **valuation** reverts while `withdraw`
+  still delivers, the stale `_totalDebt` fallback lets the first exiter take 100% (∞ skew,
+  `ExitSkewRevertFallbackC`). So this bullet does NOT imply a general bound.
 - Correction levers, by latency:
   1. Ethena `setSlippageBps` → writes NAV down by **at most 3%**. Sufficient for a shallow wobble,
      **insufficient** for a deep depeg (> 3%).
@@ -127,8 +145,11 @@ realizes cash. Result: the four adapters fall into two structural classes.
      down to realizable ⇒ **flat** payouts thereafter (E1 Case D, asserted). This is the real
      correction for a deep depeg and is always available (bypasses the registry, H-1).
 - **Persistent-overstatement window = (depeg depth beyond buffer) × (detection → `force-detach`
-  latency).** Magnitude of the resulting skew is bounded by e (M-1); duration is bounded by the
-  monitoring/response latency — whose existence is the subject of **M-3**.
+  latency).** In-window the first-mover skew is **UNBOUNDED** for a convex/reverting-valuation
+  adapter (finding C-1/D-1/E-1) — the earlier "bounded by e" claim was a linear-mock artifact and is
+  retracted. Both magnitude and duration are bounded ONLY by the monitoring/`force-detach` response
+  latency — whose existence and budget are the subject of **M-3** (and now the MANDATORY
+  valuation-revert → immediate-detach trigger in the runbook).
 
 ### M-2 conclusion
 

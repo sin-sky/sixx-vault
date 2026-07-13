@@ -44,14 +44,28 @@ reported `totalAssets()` against a realizable quote:
 - Pendle: `min(TWAP, 1e18)·ptBal` vs a `swapExactPtForToken` static-call quote (spot).
 - **ACT** when reported mark exceeds the realizable quote by > **3%** (buffer) for > 30 min.
 
+**D. Adapter valuation REVERT (primary, MANDATORY-immediate — Round-8 v2 finding D-1/E-1).**
+Static-call `adapter.totalAssets()` on every poll. **If it REVERTS, force-detach IMMEDIATELY (no
+30-min budget, no corroboration required).** When the valuation is unreadable the vault degrades the
+mark to the stale `_totalDebt`, which is loss-blind (never marked down for a realized loss). If any
+value has been lost, `totalAssets()` then OVER-reports NAV, so (i) the first exiter drains the entire
+realizable pool while the last gets 0 (`ExitSkewRevertFallbackC`: ∞ skew), and (ii) new depositors
+mint against the inflated NAV. Force-detach best-effort-recalls and writes off `_totalDebt` to the
+realized value, restoring fair pro-rata (validated: `test_C_forceDetach_restoresFairness`). Detecting
+a reverting valuation is therefore a **standalone ACT trigger** — the fastest path off the stale mark.
+
 > **Class L vs P discriminator:** if B fires but A shows peg **at par**, it is Class-L illiquidity —
 > do **not** force-detach; monitor for thaw. Force-detach only when the **peg itself** (A / C) is
 > breached beyond the buffer.
 
 ## 3. Action — force-detach procedure
 
-Target latency budget: **ACT signal → force-detach executed within 30 minutes** (this bounds the M-2
-overstatement window; the resulting skew is already bounded by e per M-1).
+Target latency budget: **ACT signal → force-detach executed within 30 minutes.** Force-detach is the
+**only** bound on first-mover exit skew during an overstatement window — do not rely on any "bounded
+by e" figure. Round-8 v2 (finding C-1/D-1/E-1) established that the in-window skew is UNBOUNDED for a
+convex adapter (Curve/Ethena, `ExitFairnessProdC` 6.08×) and ∞ (first-mover 100% / last 0) under a
+reverting valuation + realized loss (`ExitSkewRevertFallbackC`). The `< e` figure holds only for the
+linear-throttle mock and is NOT a property of the live system. Faster detach = less skew.
 
 1. **Freeze new entries** so nobody deposits at the overstated mark: guardian
    `vault.setEmergencyShutdown(true)` (immediate; `maxDeposit/maxMint → 0`). Exits stay open (柱1).

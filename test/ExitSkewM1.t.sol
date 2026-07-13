@@ -19,8 +19,18 @@ contract M1USDC is ERC20 {
 ///         Sweeps the adapter's deliverBps (realizable = deliverBps% of MARK; the un-delivered
 ///         slice stays counted in the mark = persistent overstatement). For each overstate rate
 ///         (= 1 / deliverBps) it runs the canonical 5-equal-holder ordered run and reports the
-///         first/last received ratio. Answers: is the residual first-mover advantage BOUNDED,
-///         or does it grow (linearly / unboundedly) as the oracle lies harder?
+///         first/last received ratio.
+///
+///  ⚠️ SCOPE / CORRECTION (Round-8 v2 independent audit, finding C-1/D-1/E-1): the `< e` bound
+///         asserted below holds ONLY for this adapter's PROPORTIONAL (LINEAR) delivery
+///         `deliver = assets*deliverBps/10000` — it is an ARTIFACT OF THE MOCK, NOT a property of
+///         the real system. Under a CONVEX adapter (real Curve/Ethena: ~100% fill until pool depth
+///         exhausts, then a cliff) the skew is UNBOUNDED — measured 6.08× in `ExitFairnessProdC`,
+///         and ∞ (first-mover takes 100%, last gets 0) under a reverting valuation + realized loss
+///         via the stale `_totalDebt` fallback (`ExitSkewRevertFallbackC`). IN-WINDOW the skew is
+///         NOT code-bounded; the ONLY guarantee is governance **force-detach** (writes off
+///         `_totalDebt` / socializes the loss → fair pro-rata). Do NOT cite "bounded by e" as a
+///         safety property of the vault. This suite only characterizes the linear-throttle model.
 ///
 ///         Model per run: idle = 30% of TVL, adapter mark = 70%, 5 equal users each redeem all.
 contract ExitSkewM1Test is Test {
@@ -124,10 +134,12 @@ contract ExitSkewM1Test is Test {
             Skew memory s = _runOnce(bpsGrid[k]);
             // 柱1 always holds: no exit reverts / strands, whatever the overstatement.
             assertEq(s.stuckCount, 0, "M1: honest partial-fill must never strand any exiter");
-            // M-1 BOUND: the first-mover skew is bounded by e (~2.718x) for ANY overstate rate,
-            //   because mark-price under-burn keeps supply high so late exiters keep a real
-            //   pro-rata slice. Overstatement does NOT make it grow without bound.
-            assertLt(s.ratioX1e4, 27_183, "M1: skew must stay bounded by e regardless of overstate");
+            // LINEAR-MODEL bound ONLY (see title CORRECTION): for PROPORTIONAL delivery
+            //   (deliver = deliverBps% of each request) the first/last skew stays < e (~2.718x),
+            //   because throttling the first exiter too keeps late exiters a real pro-rata slice.
+            //   This is a property of THIS mock, NOT of the vault: a CONVEX or reverting-valuation
+            //   adapter is unbounded (ExitFairnessProdC 6.08×, ExitSkewRevertFallbackC ∞).
+            assertLt(s.ratioX1e4, 27_183, "M1(linear model only): proportional-delivery skew < e");
         }
     }
 
@@ -141,19 +153,22 @@ contract ExitSkewM1Test is Test {
             Skew memory s = _runOnce(0, idleGrid[k]);
             emit log_named_uint("  ^ idlePct", idleGrid[k]);
             assertEq(s.stuckCount, 0, "M1: idle buffer always lets everyone take some cash");
-            // Even as idle -> 0 the skew converges to (1-1/N)^-(N-1); for N=5 that is 2.4414x,
-            //   still < e. The idle buffer only REDUCES skew below this cap; it never unbounds it.
-            assertLt(s.ratioX1e4, 27_183, "M1: idle->0 skew still bounded by e");
+            // LINEAR MODEL: even as idle -> 0 the proportional-delivery skew converges to
+            //   (1-1/N)^-(N-1); for N=5 that is 2.4414x. Holds ONLY for this mock's linear throttle
+            //   (a convex/reverting adapter is unbounded — see title CORRECTION).
+            assertLt(s.ratioX1e4, 27_183, "M1(linear model only): idle->0 proportional skew < e");
         }
     }
 
-    /// C) lock the closed-form: at the worst overstate (bps=0) and a near-zero idle buffer, the
-    ///    measured first/last skew must match (1-1/N)^-(N-1) within tolerance, and that formula's
-    ///    supremum over all N is e. This is the analytic anchor for the M-1 "bounded by e" claim.
+    /// C) lock the closed-form FOR THE LINEAR MODEL: at the worst overstate (bps=0) and a near-zero
+    ///    idle buffer, the measured first/last skew must match (1-1/N)^-(N-1); that formula's
+    ///    supremum over all N is e. NB this closed form is the analytic anchor for the PROPORTIONAL
+    ///    delivery model ONLY — it is NOT the vault's bound (convex/reverting delivery is unbounded;
+    ///    the vault's only bound is governance force-detach). See title CORRECTION + finding C-1.
     function test_M1_closedFormBound_matches() public {
         Skew memory s = _runOnce(0, 1); // adapter dead, idle ~1% -> near the idle->0 limit
         // (1-1/5)^-4 = (0.8)^-4 = 2.44140625 -> 24414 in x1e4 units. Allow 3% for the finite idle.
-        assertApproxEqRel(s.ratioX1e4, 24_414, 0.03e18, "M1: matches (1-1/N)^-(N-1) closed form");
-        assertLt(s.ratioX1e4, 27_183, "M1: below e for all N");
+        assertApproxEqRel(s.ratioX1e4, 24_414, 0.03e18, "M1(linear): matches (1-1/N)^-(N-1) closed form");
+        assertLt(s.ratioX1e4, 27_183, "M1(linear model only): below e for proportional delivery");
     }
 }

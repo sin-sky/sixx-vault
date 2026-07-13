@@ -20,7 +20,10 @@ contract E1USDC is ERC20 {
 ///         2026-07-13) is implemented, these cases regression-lock the achieved behavior:
 ///         NOBODY is stranded on any adapter failure mode (柱1), honest markdown/force-detach
 ///         give flat payouts (柱2/柱3), and the residual first-mover skew under an overstated
-///         mark is bounded (quantified in test/ExitSkewM1.t.sol → bounded by e).
+///         mark is bounded ONLY by governance force-detach. NB (Round-8 v2 finding C-1): the
+///         "bounded by e" figure in ExitSkewM1 holds solely for that mock's LINEAR delivery; a
+///         convex/reverting-valuation adapter is UNBOUNDED (ExitFairnessProdC 6.08×,
+///         ExitSkewRevertFallbackC ∞). Do not treat "bounded by e" as a vault property.
 contract ExitFairnessE1Test is Test {
     E1USDC          usdc;
     AdapterRegistry registry;
@@ -102,11 +105,12 @@ contract ExitFairnessE1Test is Test {
         // ADR-007 柱1: honest partial-fill strands NOBODY, even with an overstated mark.
         assertEq(o.stuckCount, 0, "A: no exiter stranded (honest partial-fill)");
         assertEq(o.cashOut, N, "A: every exiter took some cash");
-        // 柱3: the residual first-mover skew is bounded (quantified as < e in ExitSkewM1). Here it
-        //   must at least stay well under 2x for deliver=50% (measured ~1.10x).
+        // 柱3: for THIS mock's linear 50% delivery the skew is small (~1.10x). This is NOT a general
+        //   bound — a convex/reverting adapter is unbounded (finding C-1); force-detach is the only
+        //   guarantee. The assert below only pins the linear-delivery case measured here.
         uint256 skewX1e4 = o.received[N-1] == 0 ? type(uint256).max : (o.received[0] * 1e4) / o.received[N-1];
         emit log_named_uint("  first/last received ratio x1e4", skewX1e4);
-        assertLt(skewX1e4, 20_000, "A: bounded skew, not first-come monopoly");
+        assertLt(skewX1e4, 20_000, "A(linear 50% delivery only): small skew, NOT a general bound (see C-1)");
     }
 
     // ── Case B: adapter fully bricked (withdraw reverts) ──

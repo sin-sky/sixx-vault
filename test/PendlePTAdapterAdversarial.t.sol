@@ -249,6 +249,36 @@ contract PendlePTAdapterAdversarialTest is Test {
         uint256 got = adapter.withdraw(want, user);
         assertGe(got, want, "two-leg gross-up failed to cover both legs");
     }
+
+    // ─────────────────────────────────────────────────────────
+    // R8-2: the withdraw exit path must size Leg 2 (sUSDe->USDC) from the ACTUAL sUSDe
+    //       balance delta, never the router's self-reported netTokenOut — symmetric with the
+    //       deposit path's M-04. A router that OVER-reports would otherwise make _swapVia
+    //       pull more sUSDe than the adapter holds and brick the withdraw (a liveness DoS).
+    // ─────────────────────────────────────────────────────────
+    function test_R8_2_exitUsesBalanceDelta_notRouterOverReport() public {
+        _deposit(DEPOSIT);
+        // Router delivers the honest sUSDe but CLAIMS it delivered 20% more.
+        router.setReportBps(12_000);
+
+        // Pre-fix (trusting the reported out) this reverts: _swapVia would forceApprove and
+        // pull 1.2x the sUSDe the adapter actually holds. With the balance-delta fix the
+        // adapter swaps exactly what it received and the withdraw clears normally.
+        uint256 want = 3_000e6;
+        uint256 got = adapter.withdraw(want, user);
+        assertGe(got, want, "R8-2: exit under-delivered / bricked under router over-report");
+        assertEq(usdc.balanceOf(user), got, "recipient did not receive delivered USDC");
+    }
+
+    /// Full exit is equally robust to an over-reporting router.
+    function test_R8_2_fullExit_robustToOverReport() public {
+        _deposit(DEPOSIT);
+        router.setReportBps(15_000);
+        uint256 ta = adapter.totalAssets();
+        uint256 got = adapter.withdraw(ta, user); // full exit
+        assertGt(got, 0, "R8-2: full exit bricked under router over-report");
+        assertEq(pt.balanceOf(address(adapter)), 0, "position not fully drained on full exit");
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -342,6 +372,7 @@ contract MockPendleRouter is IPendleRouter {
 
     uint256 public ptDeliverBps  = 10_000; // deposit: PT minted vs fair
     uint256 public legHaircutBps = 0;      // exit: haircut on PT->sUSDe
+    uint256 public reportBps     = 10_000; // exit: sUSDe REPORTED vs actually delivered (R8-2)
 
     constructor(address usde_, address pt_, address susde_, uint256 ptRate_, uint256 susdeRate_) {
         usde = usde_; pt = MockPT(pt_); susde = MockSUSDe(susde_);
@@ -350,6 +381,7 @@ contract MockPendleRouter is IPendleRouter {
 
     function setPtDeliverBps(uint256 bps) external { ptDeliverBps = bps; }
     function setLegHaircutBps(uint256 bps) external { legHaircutBps = bps; }
+    function setReportBps(uint256 bps) external { reportBps = bps; }
 
     /// USDe -> PT (buy PT). Pulls USDe from the caller (adapter), mints PT to receiver.
     function swapExactTokenForPt(
@@ -378,9 +410,12 @@ contract MockPendleRouter is IPendleRouter {
         LimitOrderData calldata /*limit*/
     ) external returns (uint256 netTokenOut, uint256, uint256) {
         IERC20(address(pt)).safeTransferFrom(msg.sender, address(this), exactPtIn);
-        netTokenOut = _ptToSusde(exactPtIn);
-        require(netTokenOut >= output.minTokenOut, "ROUTER: insufficient out");
-        susde.mint(receiver, netTokenOut);
+        uint256 delivered = _ptToSusde(exactPtIn);
+        require(delivered >= output.minTokenOut, "ROUTER: insufficient out");
+        susde.mint(receiver, delivered);
+        // R8-2: the REPORTED out may differ from what was actually delivered; the adapter
+        //   must size Leg 2 from its real sUSDe balance delta, never this self-reported number.
+        netTokenOut = (delivered * reportBps) / 10_000;
         return (netTokenOut, 0, 0);
     }
 
@@ -393,9 +428,10 @@ contract MockPendleRouter is IPendleRouter {
     ) external returns (uint256 netTokenOut, uint256) {
         IERC20(address(pt)).safeTransferFrom(msg.sender, address(this), netPyIn);
         uint256 fairUsde = netPyIn; // par
-        netTokenOut = (fairUsde * 1e18) / susdeRate;
-        require(netTokenOut >= output.minTokenOut, "ROUTER: insufficient out");
-        susde.mint(receiver, netTokenOut);
+        uint256 delivered = (fairUsde * 1e18) / susdeRate;
+        require(delivered >= output.minTokenOut, "ROUTER: insufficient out");
+        susde.mint(receiver, delivered);
+        netTokenOut = (delivered * reportBps) / 10_000; // R8-2: report may differ from delivered
         return (netTokenOut, 0);
     }
 

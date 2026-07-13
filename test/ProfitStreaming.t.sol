@@ -150,4 +150,35 @@ contract ProfitStreamingTest is Test {
         assertEq(profit, 0, "no profit while paused");
         assertEq(vault.lockedProfit(), 0, "nothing locked while paused");
     }
+
+    /// @notice R8-1: emergency shutdown clears locked profit so totalAssets() is NOT
+    ///         suppressed during the emergency exit window. Shutdown waives the withdraw lock
+    ///         and invites everyone to exit at once; with locked profit still set, an early
+    ///         exiter would be priced against a suppressed NAV (unfair intra-user
+    ///         redistribution over the 8h tail). This mirrors the force-detach handling.
+    function test_R8_1_shutdown_clearsLockedProfit_noSuppressedExit() public {
+        uint256 aliceShares = _deposit(alice, 10_000 * USDC_6);
+        _fundReward(1_000 * USDC_6);
+        vault.harvest();
+
+        // Pre-condition: profit is locked and totalAssets is suppressed to ~principal.
+        assertApproxEqAbs(vault.lockedProfit(), 1_000 * USDC_6, 2, "profit locked pre-shutdown");
+        assertApproxEqAbs(vault.totalAssets(), 10_000 * USDC_6, 2, "NAV suppressed pre-shutdown");
+
+        // Guardian trips the emergency valve (funds recalled, withdraw lock waived).
+        vm.prank(guardianAddr);
+        vault.setEmergencyShutdown(true);
+
+        // R8-1: locked profit is cleared immediately — NAV reflects the full realized value
+        // the instant everyone is invited to exit.
+        assertEq(vault.lockedProfit(), 0, "locked profit cleared on shutdown");
+        assertApproxEqAbs(vault.totalAssets(), 11_000 * USDC_6, 2, "NAV = principal + reward at shutdown");
+
+        // An early exiter now receives full pro-rata value, not a suppressed share.
+        uint256 balBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        vault.redeem(aliceShares, alice, alice);
+        uint256 got = usdc.balanceOf(alice) - balBefore;
+        assertApproxEqRel(got, 11_000 * USDC_6, 0.005e18, "early exiter gets full value, not suppressed");
+    }
 }

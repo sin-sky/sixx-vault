@@ -382,11 +382,21 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
             swapData: SwapData({swapType: SwapType.NONE, extRouter: address(0), extCalldata: "", needScale: false})
         });
 
+        // M-04 (R8-2): size Leg 2 from the ACTUAL sUSDe received (balance delta), never the
+        //   router's reported out. The deposit path derives every amount from a balance delta;
+        //   the exit path must be symmetric. A router that over-reports would otherwise make
+        //   _swapVia pull more sUSDe than the adapter holds (withdraw DoS), and an under-report
+        //   would deflate the Leg-2 slippage floor below what the position warrants.
         uint256 susdeOut;
-        if (block.timestamp >= expiry) {
-            (susdeOut,) = pendleRouter.redeemPyToToken(address(this), yt, ptToLiq, out);
-        } else {
-            (susdeOut,,) = pendleRouter.swapExactPtForToken(address(this), market, ptToLiq, out, _emptyLimit());
+        {
+            uint256 susdeBefore = IERC20(susde).balanceOf(address(this));
+            if (block.timestamp >= expiry) {
+                pendleRouter.redeemPyToToken(address(this), yt, ptToLiq, out);
+            } else {
+                pendleRouter.swapExactPtForToken(address(this), market, ptToLiq, out, _emptyLimit());
+            }
+            susdeOut = IERC20(susde).balanceOf(address(this)) - susdeBefore;
+            require(susdeOut >= susdeMin, "ADAPTER: susde shortfall");
         }
 
         // Leg 2: sUSDe -> USDC.

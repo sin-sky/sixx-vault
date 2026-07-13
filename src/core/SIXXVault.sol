@@ -582,6 +582,18 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         //    stay counted in totalAssets() and are recoverable once the adapter
         //    unfreezes (users withdraw via _recallFromAdapter; deposits are blocked).
         emergencyShutdown = active;
+        if (active) {
+            // R8-1: clear any locked profit so totalAssets() is not artificially suppressed
+            //   during the emergency exit window. Shutdown waives the withdraw lock and
+            //   invites every holder to exit at once; leaving _lockedProfit set would price
+            //   early exiters against a suppressed NAV — an unfair intra-user redistribution
+            //   over the PROFIT_UNLOCK_PERIOD tail, occurring exactly when trust is lowest and
+            //   amplifiable by a permissionless harvest() that re-locks a fresh reward. Mirrors
+            //   the force-detach handling in setAdapter (address(0)). No-op for the current
+            //   auto-compounding adapters (harvest() delta is 0, so _lockedProfit is already 0).
+            _lockedProfit = 0;
+            _lastReport = block.timestamp;
+        }
         if (active && activeAdapter != address(0)) {
             // Recall all assets to vault for safe withdrawal by users.
             // ADR-007 #1: read the mark defensively — a reverting totalAssets() (e.g. a

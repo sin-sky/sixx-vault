@@ -3,6 +3,20 @@
 > **看板 stat の再検証。** 硬化ハーネス（pre-flight canary 検証済）で正しい invocation により再実行し、
 > ログを本ファイルに保全（as-run 証拠の単一ソース）。
 
+## S0-1 追検証（2026-07-13）— 共有tree汚染時間帯との照合＝非重複＝看板は有効
+
+構造欠陥（同一 working tree を2セッション共有）の発覚を受け、看板 run が汚染時間帯と
+重なっていないかを git reflog / commit時刻 / セッション transcript の時刻で照合した。
+
+- 凍結 src: `src` の git tree object は `9fa9796` = `main` = `d961dfc` で `af2a269838efa564972cf823b3e9364429ea8789` に一致（＝バイト同一・07-12 中の src commit 皆無）。
+- 看板 run の実行窓: harness 導入 `71afda4`(07-12 17:50 UTC) 〜 証拠 commit `d961dfc`(07-12 21:29 UTC)。
+- その窓に active だったセッションは **`f0fb3c76`（07-12 16:31–23:27 UTC）の1本のみ**（＝この run 自身のセッション）。
+  他セッションは `63cd8a58`(〜07-12 02:20, 窓の15h前に終了)・`9b7933f9`(pid 1574, 07-13 05:26開始, 窓の8h後)で **重複なし**。
+- 共有tree汚染（session A 測定中に session B が src 編集）が実際に起きたのは **07-13**（`9b7933f9`）で、看板 run の **翌日**。
+- **判定: 看板 stat（94.6% / 1090・killed 1031 / survived 59）は汚染時間帯と重ならず、有効。訂正不要。**
+  ＋ 硬化 harness の per-mutant restore と pre-flight canary（回帰 D–F で健全性を機械確認）により二重に担保。
+- 恒久対策として、以降の測定は隔離 worktree でのみ実行し、全ラン src-freeze を機械検証する（[docs/operations/ADR-008](../docs/operations/ADR-008-one-session-one-worktree.md)）。
+
 - 実行: `MUTATION_N=2000 MUTATION_SEED=0 scripts/mutation-test.sh src/core/SIXXVault.sol`（ダウンサンプル無し=1090 全件）
 - 分類 invocation: `forge test --no-match-contract Fork -q`（MUTATION_MATCH 未設定 ＝ '*' 異常終了クラス非該当）
 - pre-flight canary: **PASS**（未変異 src で 280 tests pass・invocation 健全と確認）

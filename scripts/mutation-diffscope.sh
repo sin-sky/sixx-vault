@@ -8,6 +8,9 @@
 # test caught. Original source is always restored (trap).
 set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$REPO_ROOT"
+# ADR-008: refuse to mutate the primary (freeze-target) tree; process-group trap for orphan-free kill.
+. "$(dirname "${BASH_SOURCE[0]}")/mutation-guard.sh"
+mutation_require_isolated_worktree
 TARGET="src/core/SIXXVault.sol"
 OUTDIR="$REPO_ROOT/gambit_diffscope"
 REPORTS="$REPO_ROOT/reports/mutation"; mkdir -p "$REPORTS"
@@ -63,7 +66,7 @@ KILLED=0; SURVIVED=0; SURV="$REPORTS/diffscope-survivors.txt"; : > "$SURV"
 for id in $IDS; do
   MUT="$OUTDIR/mutants/$id/$TARGET"; [ -f "$MUT" ] || continue
   cp "$MUT" "$TARGET"
-  if forge test --no-match-contract "Fork" -q > /dev/null 2>&1; then
+  if mutation_run 180 forge test --no-match-contract "Fork" -q > /dev/null 2>&1; then
     SURVIVED=$((SURVIVED+1))
     desc="$(python3 -c "import json;m=[x for x in json.load(open('$OUTDIR/gambit_results.json')) if x['id']=='$id'][0];print(m['description'])" 2>/dev/null)"
     dh="$(python3 -c "import json;m=[x for x in json.load(open('$OUTDIR/gambit_results.json')) if x['id']=='$id'][0];print(' '.join(l for l in m['diff'].splitlines() if l[:1] in '+-' and l[:3] not in ('+++','---'))[:160])" 2>/dev/null)"

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# pre-commit — ADR-008 mutation-leak guard.
+#
+# A mutation harness cp's Gambit mutants into src/**/*.sol; a zombie loop can leave one behind.
+# This hook refuses any commit whose STAGED source carries a Gambit mutation marker, so a leaked
+# mutant can never be frozen into history. Enabled via `git config core.hooksPath .githooks`
+# (run scripts/install-hooks.sh once).
+set -uo pipefail
+
+# Gambit annotates every mutant with a `/// <Kind>Mutation(` doc-comment above the changed line.
+MARKER='///[[:space:]]*[A-Za-z]*Mutation\('
+
+staged_src="$(git diff --cached --name-only --diff-filter=ACM -- 'src/*.sol' 'src/**/*.sol' 2>/dev/null | sort -u)"
+[ -z "$staged_src" ] && exit 0
+
+bad=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  # inspect the STAGED blob (not the worktree) so the check matches exactly what would be committed
+  if git show ":$f" 2>/dev/null | grep -Eq "$MARKER"; then
+    bad="$bad $f"
+  fi
+done <<< "$staged_src"
+
+if [ -n "$bad" ]; then
+  cat >&2 <<EOF
+COMMIT REJECTED (ADR-008): Gambit mutation marker found in staged source:$bad
+
+This is a leaked mutant from a mutation run, not real code. Restore the file and re-stage:
+    git checkout -- $bad
+Run mutation only via scripts/run-mutation-isolated.sh (never on the primary tree).
+EOF
+  exit 1
+fi
+exit 0

@@ -17,6 +17,10 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
+# ADR-008: refuse to mutate the primary (freeze-target) tree; process-group trap for orphan-free kill.
+. "$(dirname "${BASH_SOURCE[0]}")/mutation-guard.sh"
+mutation_require_isolated_worktree
+
 TARGET="${1:-src/core/SIXXVault.sol}"
 N="${MUTATION_N:-40}"
 SEED="${MUTATION_SEED:-0}"
@@ -90,7 +94,7 @@ for id in $IDS; do
   MUT="$OUTDIR/mutants/$id/$TARGET"
   [ -f "$MUT" ] || { echo "  mutant $id: no file, skip"; continue; }
   cp "$MUT" "$TARGET"
-  if forge test --no-match-contract "Fork" ${MUTATION_MATCH:+--match-contract "$MUTATION_MATCH"} -q > /dev/null 2>&1; then
+  if mutation_run 180 forge test --no-match-contract "Fork" ${MUTATION_MATCH:+--match-contract "$MUTATION_MATCH"} -q > /dev/null 2>&1; then
     # suite passed on the mutated contract → mutant SURVIVED (test gap)
     SURVIVED=$((SURVIVED+1))
     desc="$(python3 -c "import json;m=[x for x in json.load(open('$OUTDIR/gambit_results.json')) if x['id']=='$id'][0];print(m['description'])" 2>/dev/null)"

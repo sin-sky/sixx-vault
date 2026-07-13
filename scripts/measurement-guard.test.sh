@@ -75,7 +75,11 @@ GAMBIT
 chmod +x "$FH/.foundry/bin/forge" "$FH/.local/bin/gambit"
 
 run_mut() { # $1=FAKE_FORGE_MODE ; echoes exit code
-  HOME="$FH" FAKE_FORGE_MODE="$1" MUTATION_MATCH="" \
+  # ADR-008: this canary intentionally drives mutation-test.sh's pre-flight in the CURRENT
+  #   (primary) tree with a fake forge/gambit — no real mutant is ever written. Opt into the
+  #   sanctioned MUTATION_ALLOW_PRIMARY override so mutation_require_isolated_worktree (exit 5)
+  #   does not short-circuit before the classifier-abort logic these fixtures verify (exit 4).
+  HOME="$FH" FAKE_FORGE_MODE="$1" MUTATION_MATCH="" MUTATION_ALLOW_PRIMARY=1 \
     bash "$MUT" src/core/AdapterRegistry.sol > "$TMP/mut.$1.log" 2>&1
   echo $?
 }

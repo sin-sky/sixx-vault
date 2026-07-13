@@ -7,6 +7,7 @@ import {SIXXVault} from "../src/core/SIXXVault.sol";
 import {AdapterRegistry} from "../src/core/AdapterRegistry.sol";
 import {MockAdapter} from "./mocks/MockAdapter.sol";
 import {FaultyAdapter} from "./mocks/FaultyAdapter.sol";
+import {HarvestAdapter} from "./mocks/HarvestAdapter.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ISIXXVault} from "../src/interfaces/ISIXXVault.sol";
@@ -1115,4 +1116,214 @@ contract SIXXVaultTest is Test {
         vm.prank(alice);
         vault.withdraw(maxW, alice, alice);
     }
+
+    // ─────────────────────────────────────────────────────────
+    // Mutation-kill regressions (Round-8 diff-mutation triage, 2026-07-13)
+    // ─────────────────────────────────────────────────────────
+
+    /// Kills diffscope #110 (withdraw-path `if(!emergencyShutdown)` -> `if(true)`).
+    /// Shutdown must WAIVE an ACTIVE (future) lock on the WITHDRAW path, not only redeem. The
+    /// pre-existing shutdown+withdraw test sets no lock period, so `_lockedUntil==now` lets the
+    /// mutated `if(true)` require pass — this one sets a real 7-day lock so the mutant reverts.
+    function test_withdrawPath_shutdown_waivesLock_forLockedOwner() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // alice locked 7 days
+        vm.stopPrank();
+
+        vm.prank(governance);
+        vault.setEmergencyShutdown(true);
+
+        uint256 mw = vault.maxWithdraw(alice);
+        assertGt(mw, 0, "lock waived under shutdown (withdraw path)");
+        vm.prank(alice);
+        uint256 got = vault.withdraw(mw, alice, alice); // `if(true)` mutant -> "still locked" revert
+        assertApproxEqAbs(got, amount, 2, "locked owner exits via withdraw() under shutdown");
+    }
+
+    /// Kills diffscope #111/#115/#116 (withdraw-path lock require removed / forced true).
+    /// The require is only REACHED at the assets==0 boundary (the H-4 maxWithdraw gate reverts
+    /// assets>0 first), so a locked owner's withdraw(0) must revert "still locked", not return 0.
+    function test_withdrawPath_zeroAssets_whileLocked_reverts() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // locked
+        vm.expectRevert(bytes("VAULT: still locked"));
+        vault.withdraw(0, alice, alice);
+        vm.stopPrank();
+    }
+
+    /// Symmetric redeem-path boundary (kills the redeem-path lock-require removal if it survives).
+    function test_redeemPath_zeroShares_whileLocked_reverts() public {
+        vm.prank(governance);
+        vault.setLockPeriod(7 days);
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // locked
+        vm.expectRevert(bytes("VAULT: still locked"));
+        vault.redeem(0, alice, alice);
+        vm.stopPrank();
+    }
+
+    /// Kills #100 (withdraw-path `_collectFees()` deletion): withdraw() MUST crystallize the
+    /// accrued management fee (mint fee shares to feeRecipient) at the moment of exit.
+    function test_withdrawPath_crystallizesManagementFee() public {
+        vm.prank(governance);
+        vault.setManagementFee(500); // 5%/yr (max) -> measurable
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 180 days);
+
+        uint256 feeBefore = vault.balanceOf(feeRcpt);
+        vm.prank(alice);
+        vault.withdraw(100 * USDC_6, alice, alice); // crystallizes at top of withdraw()
+        assertGt(vault.balanceOf(feeRcpt), feeBefore, "withdraw() must crystallize management fee");
+    }
+
+    /// Kills #141 (redeem-path `_collectFees()` deletion): redeem() MUST crystallize the fee too.
+    function test_redeemPath_crystallizesManagementFee() public {
+        vm.prank(governance);
+        vault.setManagementFee(500);
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 180 days);
+
+        uint256 feeBefore = vault.balanceOf(feeRcpt);
+        vm.prank(alice);
+        vault.redeem(shares / 2, alice, alice); // crystallizes at top of redeem()
+        assertGt(vault.balanceOf(feeRcpt), feeBefore, "redeem() must crystallize management fee");
+    }
+
+
+    /// Kills diffscope #441 (`if (supply != 0)` -> `if (true)`): the guard prevents a
+    /// div-by-zero (Math.mulDiv denominator 0) when the exit core runs on an EMPTY vault.
+    /// withdraw(0) before any deposit (supply==0) must return 0, not revert.
+    function test_exitRealize_emptyVault_withdrawZero_noRevert() public {
+        // fresh vault, no deposits -> totalSupply()==0
+        assertEq(vault.totalSupply(), 0, "precondition: empty vault");
+        vm.prank(alice);
+        uint256 got = vault.withdraw(0, alice, alice); // #441 mutant -> mulDiv(mark,0,0) reverts
+        assertEq(got, 0, "empty-vault withdraw(0) returns 0");
+    }
+
+
+    /// Kills #577 (`if (caller != owner)` -> `if(false)`) and #584 (`_spendAllowance` deleted):
+    /// a delegated exit (caller != owner) MUST charge the owner's allowance to the caller.
+    function test_delegatedExit_requiresAndSpendsAllowance() public {
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        vm.stopPrank();
+        // bob has no allowance from alice -> delegated redeem must revert
+        vm.prank(bob);
+        vm.expectRevert();
+        vault.redeem(shares, bob, alice);
+        // grant exact allowance -> delegated redeem succeeds and spends it to zero
+        vm.prank(alice);
+        vault.approve(bob, shares);
+        vm.prank(bob);
+        vault.redeem(shares, bob, alice);
+        assertEq(vault.allowance(alice, bob), 0, "delegated exit must spend allowance");
+    }
+
+    /// Kills #541 (`if (payout >= requestedAssets)` -> `if(false)`): a fully-realizable exit takes
+    /// the full-fill branch and burns EXACTLY the offered shares (no phantom residual left behind).
+    function test_fullExit_burnsAllOfferedShares_noResidual() public {
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, alice);
+        uint256 got = vault.redeem(shares, alice, alice);
+        vm.stopPrank();
+        assertEq(vault.balanceOf(alice), 0, "full redeem must burn all offered shares");
+        assertApproxEqAbs(got, amount, 2, "full redeem pays ~principal");
+    }
+
+    /// Kills #438 (F-2 catch fallback `mark = _totalDebt` -> `mark = 1`): when the adapter's
+    /// valuation read REVERTS, _exitRealize must degrade the mark to the last booked debt
+    /// (_totalDebt) so the pro-rata recall still pulls funds and the exit delivers. The mutant's
+    /// mark==1 collapses proRata to ~1 wei, recalls ~nothing, and delivers ~0 despite withdraw() working.
+    function test_exitRealize_markFallback_deliversWhenValuationReverts() public {
+        FaultyAdapter faulty = new FaultyAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(faulty), "Test", "Faulty");
+        vault.setAdapter(address(faulty));
+        vm.stopPrank();
+
+        uint256 amount = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, alice); // funds in faulty adapter; _totalDebt == amount
+        vm.stopPrank();
+
+        // Break the valuation read only; withdraw() still delivers 100% (deliverBps default).
+        faulty.setRevertOnTotalAssets(true);
+
+        uint256 mw = vault.maxWithdraw(alice); // survives via totalAssets()'s _totalDebt fallback (H-02)
+        assertGt(mw, 0, "maxWithdraw survives broken valuation");
+
+        uint256 balBefore = usdc.balanceOf(alice);
+        vm.prank(alice);
+        uint256 got = vault.withdraw(mw, alice, alice);
+        assertApproxEqAbs(got, amount, 2, "exit delivers against _totalDebt mark when valuation reverts");
+        assertEq(usdc.balanceOf(alice) - balBefore, got, "assets actually delivered to owner");
+        assertGt(got, amount / 2, "substantial delivery (kills mark=1 -> ~0 recall)");
+    }
+
+    /// Kills #456 (F-3 `need = requestedAssets - idleShare` -> `+ idleShare`): the adapter recall
+    /// is capped at the SHORTFALL (need), so a mark that overstates realizable by the still-locked
+    /// profit is NOT over-pulled into idle. The mutant recalls req+idleShare, stranding ~2*idle in
+    /// the vault (breaks non-custody-no-idle). Requires idle>0 AND mark>realizable (locked profit).
+    function test_exitRealize_noOverRecall_whenIdlePresent() public {
+        HarvestAdapter h = new HarvestAdapter(address(usdc), address(vault));
+        vm.startPrank(governance);
+        registry.registerAdapter(address(h), "Test", "Harvest");
+        vault.setAdapter(address(h));
+        vm.stopPrank();
+
+        uint256 D = 1_000 * USDC_6;
+        vm.startPrank(alice);
+        usdc.approve(address(vault), D);
+        uint256 shares = vault.deposit(D, alice); // adapter _balance == D
+        vm.stopPrank();
+
+        // Realize discrete profit Y and lock it: adapter mark = D+Y, but vault.totalAssets = D
+        // (locked profit subtracted). Choose Y > 2*I so proRata does not bind the recall.
+        uint256 Y = 400 * USDC_6;
+        usdc.mint(address(this), Y);
+        usdc.approve(address(h), Y);
+        h.addReward(Y);
+        vault.harvest();
+        assertGt(vault.lockedProfit(), 0, "profit locked (mark overstates realizable)");
+
+        // Inject an idle buffer I (I < Y/2) so idleShare > 0 at exit.
+        uint256 I = 100 * USDC_6;
+        usdc.mint(address(vault), I);
+        assertEq(usdc.balanceOf(address(vault)), I, "idle buffer present");
+
+        // Alice exits fully at t0 (locked profit still full). Honest recall leaves no idle;
+        // the mutant over-recalls and strands ~2*I in the vault.
+        vm.prank(alice);
+        vault.redeem(shares, alice, alice);
+
+        assertApproxEqAbs(usdc.balanceOf(address(vault)), 0, 3,
+            "no over-recall: exit strands no idle (kills need = +idleShare)");
+    }
+
 }

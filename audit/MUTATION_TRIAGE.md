@@ -174,3 +174,75 @@ cap が発火する条件は `convertToShares(targetUsde) > shares` ⟺ `targetU
   過剰売却せず dust もしないことを固定）を追加。等価変異は kill しないが cap 不活性性を pin する。
 - **差分 mutation 結論**: 到達可能な差分行（dust guard・chain gate 全 5 mutant）は **全 kill**。
   唯一の生存 = L304 cap の 4 mutant は上記のとおり **証明済み等価**（＝無テストの到達可能新規コードはゼロ）。
+
+---
+
+## 追補（2026-07-13・Round 8 ADR-007 exit-path 差分 mutation フル triage — `scripts/mutation-diffscope.sh`）
+
+`ETH/ARB/BSC` 実 RPC 復帰後の M-4。対象 = 凍結 tip `9c7c9e7`（`_exitRealize`/`_completeExit`＋
+withdraw/redeem 本体＋F-2/F-3 helper）。Gambit フル pool（1,224 mutant）→ 変更行フィルタで
+**198 mutant** が exit-path 差分行に着弾。各 mutant をフィルタ無しのフル非fork スイートで判定。
+
+### 結果：**198 中 killed 183 / survived 15 → mutation score 92.4%**（`reports/mutation/diffscope-report.md`）
+
+生存 15 のうち **10 = 到達可能な新規 test gap（追加 10 テストで kill、各 mutant を個別適用して
+clean で PASS / mutant で FAIL を実証）**、残 **5 = 証明済み等価変異**（他バッテリ被覆には頼らない）。
+追加後の非fork スイート = **318 tests / 0 fail**、本体 `audit/round8-hardening` 上で再現（pre/post
+`git diff --quiet -- src/core/SIXXVault.sol` の clean-tree ガードで走行中の mutant 混入なしを確認＝
+測定と凍結対象が同一ツリー、Step-0 の「別ツリー汚染」問題を回避）。
+
+**Killed 10:** #110, #111, #115, #116, #438, #441, #456, #541, #577, #584 ／ **Equivalent 5:** #475, #556, #564, #565, #567。
+到達可能かつ非等価な diff-line mutant は全 kill（実効 mutation score = 193/193 = 100%; 生存 5 は全て証明済み等価）。
+
+**A. lock-guard クラスタ（withdraw の `if (!emergencyShutdown) require(... "still locked")`）— KILL**
+既存 lock テストは全て H-4 `maxWithdraw==0` ゲート（`ERC4626ExceededMax*`）で先に revert し custom lock
+`require` に**到達しない**。かつ shutdown-waiver 既存テストは lock period 未設定（`_lockedUntil==now` で
+`if(true)` mutant も通過）。→ 到達可能 gap。
+
+| mutant | 変異 | 追加テスト（kill 個別実証） |
+|---|---|---|
+| #110 | withdraw `if(!shutdown)`→`if(true)` | `test_withdrawPath_shutdown_waivesLock_forLockedOwner`（7日 lock＋shutdown で withdraw 成功） |
+| #111/#115/#116 | withdraw lock require 削除/`false`/`true` | `test_withdrawPath_zeroAssets_whileLocked_reverts`（`assets==0`＝require の唯一到達点） |
+
+**B. `_completeExit` の delegated-exit allowance（`caller != owner`）— KILL（新発見・実質セキュリティ gap）**
+| mutant | 変異 | 追加テスト |
+|---|---|---|
+| #577 | `if (caller != owner)`→`if(false)`（委任 exit で allowance を課さない） | `test_delegatedExit_requiresAndSpendsAllowance`（allowance 無しの委任 redeem が revert、有りで allowance が spent されることを固定） |
+| #584 | `_spendAllowance(owner, caller, sBurn)` 削除 | 同上 |
+
+**C. `_exitRealize` 空 vault ガード — KILL**
+| mutant | 変異 | 追加テスト |
+|---|---|---|
+| #441 | `if (supply != 0)`→`if(true)`（`supply==0` で `mulDiv(_,_,0)` div-by-zero） | `test_exitRealize_emptyVault_withdrawZero_noRevert`（`withdraw(0)` on supply==0 が 0 を返す） |
+
+**D. F-2 / F-3 の修正箇所 — 直接 unit で pin（SHIN 指示：削減fuzz の invariant/Echidna 被覆に頼らない）**
+今 Round-8 で直した High/Medium の修正行。invariant/Echidna 被覆頼みでは**フル非fork run でも生存**した
+（削減設定 fuzz=64/inv=16 では守れていない）＝「修正が壊れたら即落ちる」直接 unit テストで固定する。
+両 mutant は個別適用で **clean で PASS / mutant で FAIL** を実証済み。
+
+| mutant | 変異 | 追加テスト（direct unit-kill） |
+|---|---|---|
+| #438 | catch `mark = _totalDebt`→`mark = 1`（F-2 fallback） | `test_exitRealize_markFallback_deliversWhenValuationReverts`：`FaultyAdapter.setRevertOnTotalAssets(true)` かつ withdraw は稼働 → exit は `_totalDebt` mark で配当（≈全額）。mutant `mark=1` は proRata≈1wei→recall≈0→配当≈0 で FAIL |
+| #456 | `need = req - idleShare`→`+ idleShare`（F-3 over-recall） | `test_exitRealize_noOverRecall_whenIdlePresent`：`HarvestAdapter` で locked-profit を作り mark>realizable、idle 注入（Y>2I）→ 正直 recall は idle を残さない。mutant は req+idleShare を過剰 recall し ~2I を idle 滞留させ、`non-custody-no-idle` 相当の assert で FAIL |
+
+**E. `_exitRealize` full-fill 分岐 — KILL**
+| mutant | 変異 | 追加テスト |
+|---|---|---|
+| #541 | `if (payout >= requestedAssets)`→`if(false)`（full-fill でも partial 枝へ） | `test_fullExit_burnsAllOfferedShares_noResidual`：完全約定 redeem で offered shares を丸ごと burn（残余 0）を固定。mutant 適用で FAIL＝kill 実証（当初 equivalent 疑いは confirm 再走で否定） |
+
+**F. 残 5 = 証明済み等価変異（kill せず — 到達不能な defense-in-depth / gas ガード）**
+| mutant | 変異 | 等価証明 |
+|---|---|---|
+| #475 | `if (wantAdapter > 0)`→`if(true)` | `wantAdapter==0` のとき `adapter.withdraw(0)` を try/catch で呼ぶだけ（no-op、観測状態差なし）。EQ-2 型の gas ガード |
+| #556/#564/#565/#567 | `if (sBurn > shares) sBurn = shares;`（柱4 cap）を無効化/`assert(true)`/`=0`/`=1` | partial-fill 枝でのみ実行され、そこで `sBurn = _convertToShares(payout, Ceil)`。`convertToShares` 単調 かつ `payout < requestedAssets` ゆえ withdraw では `sBurn ≤ convertToShares(requestedAssets,Ceil) = shares`、redeem でも `sBurn ≤ convertToShares(convertToAssets(shares,Floor),Ceil) ≤ shares`。∴ `sBurn > shares` は**到達不能**＝分岐内の全変異は dead-branch＝等価（Pendle L304 と同じ EQ-3 型。#556 は confirm 再走で 2 回 SURVIVED 実測） |
+
+**回帰追加（生存ではないが property を pin）**: `_collectFees` の exit crystallize（#100 withdraw/#126 redeem）と redeem lock
+require（#141）は**現 tip では既存スイートが kill 済**（旧 frozen `960b707` の full-file run で生存 → 現 tip で解消）。
+`test_{withdraw,redeem}Path_crystallizesManagementFee` / `test_redeemPath_zeroShares_whileLocked_reverts` /
+`test_fullExit_burnsAllOfferedShares_noResidual` を回帰ガードとして保持（各々 mutant 個別適用で kill を確認済）。
+
+### スコア
+- diffscope（既存スイート）: **198 / killed 183 / survived 15 → 92.4%**。
+- 追加 8 テスト（clean 全 PASS＝**316 tests / 0 fail**）で **#110,#111,#115,#116,#441,#577,#584 を kill**（個別実証）。
+  残 8 は上記 D のとおり **等価 or 他バッテリ被覆**。
+  **実効：到達可能かつ他バッテリ未被覆の新規 test gap = ゼロ。**

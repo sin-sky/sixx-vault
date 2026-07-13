@@ -175,9 +175,19 @@ Verified on the real `SIXXVault`:
   (no revert, never take cash away) under: `deliverBps = 0` (delivers nothing), `deliverBps = 1`,
   `revertOnWithdraw`, `revertOnTotalAssets` (valuation reverts → `totalAssets` degrades to
   `_totalDebt`), and both reverts together. Confirmed for all 5 modes × {redeem, withdraw}.
-- **Diff-line mutation:** 224 mutants on the changed exit-path lines (withdraw/redeem bodies +
-  `_exitRealize` + `_completeExit`, including the F-2/F-3 lines) run against the full non-fork
-  suite. _(score filled below.)_
+- **Diff-line mutation (`scripts/mutation-diffscope.sh`, tip `9c7c9e7`):** 198 mutants land on the
+  changed exit-path lines (withdraw/redeem bodies + `_exitRealize` + `_completeExit`, incl. the
+  F-2/F-3 lines) run against the full non-fork suite. Baseline run: **killed 183 / survived 15 →
+  92.4%** (`reports/mutation/diffscope-report.md`). Every survivor triaged (`audit/MUTATION_TRIAGE.md`
+  Round-8 addendum): **10 = reachable test gaps → killed by 10 added exit-path regressions** (each
+  proven by applying the mutant individually: PASS on clean, FAIL under mutant), **5 = proven
+  equivalent** (unreachable defense-in-depth: #475 gas guard, #556/#564/#565/#567 the 柱4 `sBurn`
+  cap which `convertToShares` monotonicity makes unreachable). Post-fix non-fork suite = **318
+  tests / 0 fail**, reproduced on the frozen `audit/round8-hardening` tree under a pre/post
+  clean-tree guard. Effective (non-equivalent) mutation score = **193/193 = 100%**. The F-2 (#438)
+  and F-3 (#456) fixes are **pinned by direct unit tests** (`test_exitRealize_markFallback_*`,
+  `test_exitRealize_noOverRecall_whenIdlePresent`), not by reduced-fuzz invariant/Echidna coverage —
+  both survived the reduced-run suite, so they regress-fail the instant the fix breaks.
 
 ### F-2 / F-3 / F-4 remediation (SHIN 2026-07-13, independent of F-1)
 

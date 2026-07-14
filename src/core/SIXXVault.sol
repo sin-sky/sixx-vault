@@ -209,7 +209,11 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     ///      Detection is a direct try/catch — it is `false` ONLY when the call actually reverts, so
     ///      it can never false-positive and degrade a healthy adapter. Used to (a) idle-only the
     ///      exit recall and (b) pause deposits, so no exit prices against, and no depositor mints
-    ///      against, a stale overstated mark. Force-detach (writes `_totalDebt` to realized) clears it.
+    ///      against, an UNREADABLE (reverting) valuation. SCOPE (Round-8 v2 arbiter LOW_INFO): this
+    ///      catches ONLY a reverting valuation — a readable-but-OVERSTATED (phantom / silent-loss)
+    ///      mark is NOT detected here and stays the documented in-window residual bounded only by
+    ///      governance force-detach (007-prefreeze-measurements M-1/M-2, 007-pro-rata-exit-design D-5).
+    ///      Force-detach (writes `_totalDebt` to realized) clears the unreadable state.
     function _adapterValuationReadable() internal view returns (bool) {
         address a = activeAdapter;
         if (a == address(0)) return true; // already detached: idle-only is the state, not a fault
@@ -396,6 +400,10 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         //   by governance force-detach (which sets activeAdapter=0 and writes `_totalDebt` to realized,
         //   after which idle pays pro-rata below). Normal idle payout is unaffected — it runs only when
         //   the valuation is readable, or after detach (activeAdapter==0 ⇒ valuationReadable stays true).
+        //   NOT ATTACKER-INDUCIBLE (Round-8 v2 pre-freeze ①): every shipped adapter's totalAssets() is a
+        //   parameterless external VIEW over its OWN balances (aToken/vToken/sUSDe/Pendle-TWAP), takes no
+        //   caller input and reverts only on a genuine external-protocol fault — no vault-user op can
+        //   trigger it; and even if it occurs, skim=0 so an attacker gains nothing (see adjudication doc).
         //
         //   EXEMPTION — emergency shutdown: shutdown already force-recalled the adapter to idle and
         //   set `_totalDebt = 0` (setEmergencyShutdown), so the loss-blind over-statement that this

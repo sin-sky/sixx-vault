@@ -35,6 +35,7 @@ copy "test"       "$STAGE/"
 copy "script"     "$STAGE/"        # deploy/wiring scripts (public addrs only; DeployWiring.t.sol needs them)
 copy "lib"        "$STAGE/"        # OZ + forge-std, pinned; .git stripped
 copy "audit"      "$STAGE/"
+copy "docs"       "$STAGE/"        # ADR-007 (architecture/{decisions,designs}), mainnet-gate + runbooks (operations)
 mkdir -p "$STAGE/scripts"
 cp scripts/contract-audit.sh scripts/mutation-test.sh scripts/make-handoff.sh scripts/verify-audit-toolchain.sh "$STAGE/scripts/"
 cp foundry.toml remappings.txt .gitmodules echidna.yaml "$STAGE/"

@@ -35,3 +35,16 @@
   `&&`→`||` → healthy 経路 kill(6 fail) / catch 無力化(guard dead)→ skim 再発を 2 テストが kill(2 fail)。
 - **平常系 1-wei 不変**: readable 分岐は構造的に無変更(新 `if` を素通り、try 本体不変)。
 - **新規攻撃面なし**: internal 関数、既存 state `emergencyShutdown` を読むのみ、新規 external call / storage / 再入なし。
+
+---
+
+## 追補(SHIN 受理条件 ①②③ 後の最終 tip)
+
+凍結候補の最終 tip = **`9d1629d`**。battery 全 green は `src == 06e13c9` に対して実測。以降の増分は挙動非変更:
+- `5fd0ff2` — slither baseline 再凍結(audit metadata、src 無改変)。
+- `ed46e6c` — **コメントのみ**の src 変更(LOW_INFO 厳密化 + ① 非誘発性 1 行)+ adjudication 台帳。
+  ランタイム bytecode 同一 ⇒ test/echidna/halmos/invariant/fork/coverage は carry over。再検証実測: build ✓、
+  非-fork **323/0** ✓、F テスト ✓、slither **0-new**(id はコメント非感応、baseline 不変)✓、aderyn **High 1 / Med 0** ✓。
+- `9d1629d` — UX follow-up doc(src 無改変)。
+
+∴ **最終 tip `9d1629d` の src(`099ef73…`/tree `2e03a23…`)に対し battery 全 green が成立**(clean-tree ガード各回検証)。

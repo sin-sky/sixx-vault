@@ -128,4 +128,52 @@ contract ExitSkewRevertFallbackCTest is Test {
         assertApproxEqAbs(aGot, 5_000 * U, 3, "force-detach: fair 5k");
         assertApproxEqAbs(bGot, 5_000 * U, 3, "force-detach: fair 5k");
     }
+
+    /// GAP-CLOSER (Round-8 v2 arbiter F): the original `_noFirstMoverDrain` above only asserted
+    ///   fairness at idle==0 (0/0 trivially equal), which is exactly why it MISSED the burn-price
+    ///   skim — with idle>0 the idle-only branch used to pay a partial slice and burn it at the
+    ///   loss-blind mark, under-burning the first exiter's shares. This case forces idle>0 AND a
+    ///   realized loss AND a reverting valuation, then runs sequential idle-only redeems +
+    ///   force-detach + residual redeems, and asserts the first exiter gains NOTHING over the last
+    ///   (skim == 0 wei) and neither is haircut (both recover fair pro-rata). Mirrors the dedicated
+    ///   ExitSkewIdleOnlyBurnPriceF PoC, kept here so this suite's fairness claim covers idle>0.
+    function test_C_revertFallback_guard_idlePositive_noBurnPriceSkim() public {
+        (uint256 aS, uint256 bS) = _twoHolderLoss(); // adapter real 10k, _totalDebt 20k, idle 0
+        // Idle appears (donation / fee residue / prior partial recall): 4k.
+        usdc.mint(address(vault), 4_000 * U);
+        assertEq(usdc.balanceOf(address(vault)), 4_000 * U, "idle = 4k");
+        // Total realizable = idle 4k + adapter 10k = 14k; fair per symmetric holder = 7k.
+        uint256 fair = 7_000 * U;
+
+        adapter.setRevertOnTotalAssets(true); // oracle broken -> idle-only exits
+
+        // Sequential idle-only redeems: the F guard realizes NOTHING under an unreadable valuation.
+        vm.prank(alice); uint256 aGot1 = vault.redeem(aS, alice, alice);
+        vm.prank(bob);   uint256 bGot1 = vault.redeem(bS, bob, bob);
+        assertEq(aGot1, 0, "F: no partial idle payout under revert (alice)");
+        assertEq(bGot1, 0, "F: no partial idle payout under revert (bob)");
+        assertGt(vault.balanceOf(alice), 0, "alice retains full claim (no brick)");
+        assertGt(vault.balanceOf(bob),   0, "bob retains full claim (no brick)");
+
+        // Force-detach releases the adapter's real 10k to idle (total idle -> 14k), writes off debt.
+        adapter.setRevertOnTotalAssets(false);
+        vm.prank(governance); vault.setAdapter(address(0));
+        assertApproxEqAbs(usdc.balanceOf(address(vault)), 14_000 * U, 3, "recovered realizable to idle");
+
+        // Residual redeems settle fair pro-rata of the recovered pool.
+        // (hoist balanceOf before the prank — a call in the arg would consume it)
+        uint256 aRem = vault.balanceOf(alice);
+        uint256 bRem = vault.balanceOf(bob);
+        vm.prank(alice); uint256 aGot2 = vault.redeem(aRem, alice, alice);
+        vm.prank(bob);   uint256 bGot2 = vault.redeem(bRem, bob, bob);
+        uint256 aTotal = aGot1 + aGot2;
+        uint256 bTotal = bGot1 + bGot2;
+        emit log_named_uint("alice TOTAL", aTotal);
+        emit log_named_uint("bob   TOTAL", bTotal);
+
+        assertApproxEqAbs(aTotal, bTotal, 3, "SKIM == 0: first == last for symmetric holders (idle>0)");
+        assertApproxEqAbs(aTotal, fair, 3, "no haircut: alice ~= fair 7k");
+        assertApproxEqAbs(bTotal, fair, 3, "no haircut: bob ~= fair 7k");
+        assertLe(aTotal + bTotal, 14_000 * U + 3, "no value printed");
+    }
 }

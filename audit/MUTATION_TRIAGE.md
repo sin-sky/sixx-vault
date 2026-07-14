@@ -262,3 +262,27 @@ idle-only(recall しない)」に硬化(`docs/architecture/designs/007-pro-rata-
 targeted mutation（deposit-pause 除去・`_adapterValuationReadable`→常 true）で **全 kill 実証**。
 **トレードオフ**: broken-oracle の単独 exit が permissionless recall → force-detach 依存（governance-gated）に。
 資金喪失・brick なし（force-detach で全額回復）だが H-02 の可用性を弱める＝SHIN 凍結判断で要確認。
+
+---
+
+## 追補2（2026-07-14・裁定 F: C-1 ガード自体の残欠 = idle-only burn 価格 skim を修正）
+
+独立監査(6エージェント @ b835c09)が **C-1 ガード自体に新規 Medium** を発見（4 finder 収束・F が wei PoC）。
+C-1 の idle-only 分岐は payout は idle pro-rata で正しいが、部分フィルの `sBurn = _convertToShares(payout)` が
+revert 時に loss-blind な `_totalDebt`(過大 mark)で焼く → 先着 exiter が過少焼却・過大 residual 保持 →
+force-detach 後も先着 skim（対称2ホルダーで alice 4735.96 / bob 4264.04、fair 4500、skim ≈10.5%）。
+= ADR-007 柱4 違反、F-1 型再発。回帰 `ExitSkewRevertFallbackC` が idle==0 でしか公平性を主張せず見逃し。
+
+**修正（`SIXXVault._exitRealize` "F guard"）**: valuation 不読 かつ 非 shutdown の still-attached アダプターで
+`return (0, 0)`（payout=0・sBurn=0・全請求権保持）。revert 中は adapter realizable `R` 不可知ゆえ部分 idle payout を
+公平価格付け不能（mark=過大→skim、idle-only 価格=過小→全焼却で R stranded=F-1 haircut）。0 実現は柱1(no-brick)を保ち、
+R を force-detach で順序非依存に公平解放。shutdown 除外（recall 済 `_totalDebt=0`⇒mark=idle=正確⇒skim 不能・緊急バルブ非 re-brick）。
+
+**変異 kill（targeted・全 kill 実証）**:
+- `!emergencyShutdown` 除去（shutdown 下でも 0 payout）→ `test_H02_redeem_succeeds_underShutdown_whenTotalAssetsReverts` が kill（1 fail）。
+- `&&` → `||`（readable/非 shutdown の healthy exit も 0 に）→ healthy 経路多数 kill（6 fail）。
+- catch の `valuationReadable=false` を `=true` に（ガード dead）→ skim 再発、`ExitSkewIdleOnlyBurnPriceF` ＋ `ExitSkewRevertFallbackC::…_idlePositive_…` が kill（2 fail）。
+
+**回帰固定**: 新規 `test/ExitSkewIdleOnlyBurnPriceF.t.sol`（修正後 4500/4500・skim0・haircut0）、
+`ExitSkewRevertFallbackC::test_C_revertFallback_guard_idlePositive_noBurnPriceSkim`（idle>0 で 7000/7000）。
+非-fork 323/0、healthy 1-wei 不変。**新規は実質1件**、残 raw findings は C-1/D-1/E-1・F-A1/E-2 の重複/論拠済で却下・未確定（逐条は監査ラン `wvzx41sq0`）。

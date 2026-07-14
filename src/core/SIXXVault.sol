@@ -346,12 +346,13 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         uint256 idleShare = supply == 0 ? idle0 : Math.mulDiv(idle0, shares, supply);
 
         uint256 fromAdapter;
+        bool valuationReadable = true;
         if (activeAdapter != address(0)) {
             // C-1/D-1/E-1 guard (Round-8 v2): recall ONLY against a READABLE valuation. The whole
             //   recall lives inside the `totalAssets()` try — if the adapter valuation reverts we
-            //   take the catch and do NOT recall (idle-only exit, fromAdapter stays 0). This still
-            //   satisfies F-2/柱1 (a broken oracle NEVER bricks the exit — the caller is paid their
-            //   idle pro-rata), but it no longer prices the recall against the stale, loss-blind
+            //   take the catch and realize NOTHING here (see the F guard below). This still
+            //   satisfies F-2/柱1 (a broken oracle NEVER bricks the exit — the call returns without
+            //   reverting), but it no longer prices the recall against the stale, loss-blind
             //   `_totalDebt`: that over-stated mark let the FIRST exiter drain the whole realizable
             //   pool while the last got 0 (skew ∞). Under an unreadable valuation the adapter's
             //   realizable value is unknown, so it is released FAIRLY by governance force-detach
@@ -377,8 +378,35 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
                     _totalDebt = _totalDebt > fromAdapter ? _totalDebt - fromAdapter : 0;
                 }
             } catch {
-                // valuation unreadable -> idle-only exit (fromAdapter stays 0), released by force-detach.
+                valuationReadable = false;
             }
+        }
+
+        // F guard (Round-8 v2 arbiter — supersedes the C-1 "idle still pays" behavior): under an
+        //   UNREADABLE valuation on a STILL-ATTACHED adapter, realize NOTHING (payout=0, sBurn=0)
+        //   and retain the full claim. 柱4 requires burning shares at the REALIZABLE price so
+        //   per-share value is preserved; but the frozen adapter's realizable NAV (idle + R) is
+        //   UNKNOWN while the valuation reverts, so ANY partial idle payout must be priced against
+        //   an unknown denominator. Pricing it at the loss-blind mark (`_totalDebt`) under-burns
+        //   the first exiter's shares → over-retained residual → a permanent first-mover skim of
+        //   the last exiter after force-detach (ExitSkewIdleOnlyBurnPriceF). Pricing it at the
+        //   idle-only NAV burns the whole offered stake → strands the adapter claim (F-1 haircut).
+        //   Neither is fair, so we realize 0 here: the exit NEVER bricks (returns without reverting,
+        //   claim retained), and the adapter's realizable value is released FAIRLY, order-independent,
+        //   by governance force-detach (which sets activeAdapter=0 and writes `_totalDebt` to realized,
+        //   after which idle pays pro-rata below). Normal idle payout is unaffected — it runs only when
+        //   the valuation is readable, or after detach (activeAdapter==0 ⇒ valuationReadable stays true).
+        //
+        //   EXEMPTION — emergency shutdown: shutdown already force-recalled the adapter to idle and
+        //   set `_totalDebt = 0` (setEmergencyShutdown), so the loss-blind over-statement that this
+        //   guard defends against cannot exist under shutdown: the mark fallback (idle + `_totalDebt`)
+        //   equals real idle, so pricing the idle payout at it is fair (no first-mover skim is
+        //   reachable — either the recall delivered and `_totalDebt==0`, or it did not and idle==0).
+        //   Blocking here instead would re-brick the emergency valve (H-02) for a post-shutdown
+        //   oracle break, stranding already-recalled idle behind a governance action. So under
+        //   shutdown we fall through and pay the idle pro-rata as before.
+        if (!valuationReadable && !emergencyShutdown) {
+            return (0, 0);
         }
 
         // Pro-rata of realizable liquidity actually on hand for this caller.

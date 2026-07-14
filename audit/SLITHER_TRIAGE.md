@@ -151,3 +151,22 @@ tx-origin）は **0 件**。逐条：
 | `EthenaSUSDeAdapter.deposit`／`withdraw` の Curve `exchange()`・`susde.deposit()`（4 件） | unused-return | 意図的 | M-04。戻り値を信用せず実残高デルタで検算・`min_out` で保護。F-3 修正で行シフトのみ（`exchange` 呼自体は不変）。 |
 
 → baseline を再凍結（`audit/slither-baseline.json` 更新）。実問題ゼロ。
+
+---
+
+## Round 8 v2（`06e13c9`／裁定 F: idle-only burn-price skim ガード）
+
+`_exitRealize` の F guard 追記（`bool valuationReadable` ＋ `if (!valuationReadable && !emergencyShutdown) return (0,0)`,
+src +32 行）で `_exitRealize`（#339-424）以下の行番号が動き、slither の content-hash `id` が変化。**baseline は
+`0245fd9`（b835c09 より前）で凍結され stale** だったため、差分は **15 件**を「新規」と表示。うち **14 件は
+既トリアージ済クラスの行シフト再配置**（(detector, function) が baseline に一致）、**1 件のみ真に baseline 未収録**:
+
+| 新規箇所 | 検出器 | 判定 | 理由 |
+|---|---|---|---|
+| `SIXXVault._adapterValuationReadable`（**b835c09 由来**、本 commit ではない） | unused-return | 意図的・良性 | C-1 guard の valuation プローブ `try totalAssets() returns (uint256) {} catch {}`。戻り値は**意図的に破棄**（読めるか否かのみを判定）。既トリアージの unused-return クラス（`setAdapter`/`harvest`/`_deployToAdapter` の withdraw/deposit/harvest 戻り値破棄）と同型。危険性なし。 |
+
+危険検出器（arbitrary-send / suicidal / controlled-delegatecall / reentrancy-eth / unprotected-upgrade /
+weak-prng / tx-origin）は **0 件**。**本 commit（06e13c9 vs b835c09）が追加した新 finding クラスはゼロ**
+（F guard は external call/storage/equality を一切追加しない）。15 件はすべて行シフト＋b835c09 の良性 probe。
+
+→ baseline を再凍結（`audit/slither-baseline.json` ← clean-tree ガード下で生成した `reports/slither-current.json`）。実問題ゼロ。

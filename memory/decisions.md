@@ -7,16 +7,15 @@
 
 ---
 
-## D-A(PENDING-HUMAN)— Ethena go-live / activate の実状態確認
-- **状態**: 人間 SHIN が Etherscan で確認中(エージェントは RPC 不使用のため確証不可)。
-- **repo 証跡**: `broadcast/DeployEthenaAdapter.s.sol/1/run-latest.json`(chain 1 = Ethereum mainnet, ≈2026-07-09)は **CREATE(デプロイ)のみ**。
-  - TimelockController `0x2ae6b837f07fb56da70d460c483a6ffcf45ac90b`
-  - AdapterRegistry `0x0f44fc955357655721dc2c4b15a31dffbee9d9c2`
-  - SIXXVault `0x933537d1be32a85a80d370e5e035f29f0d415af6`
-  - EthenaSUSDeAdapter `0x896becfd1556de5e64d9df6465f83369a7310104`
-- **全 ref を検索して `setAdapter`/`register`/`isActive`/`executeBatch`/`activate` の broadcast 記録は 0 件**。
-  → repo 事実としては **デプロイ済・未 activate(準備中)**。ただし Safe/Timelock を forge broadcast 以外で実行していれば痕跡は残らない。
-- **確定に必要**: SHIN が (i) `registry.isActive(0x896b…)` / `vault.activeAdapter()` の Etherscan 値、または (ii) activate/executeBatch の tx ハッシュ を提示 → 本項目を CONFIRMED に更新。
+## D-A(CONFIRMED 2026-07-16 SHIN)— Ethena go-live / activate = レール完成(ユーザー未開放)
+- **状態**: CONFIRMED。**activate 実行済(レール完成)**。ただし**ユーザー開放は外部監査後の方針を維持** = UI は「準備中」ゲート継続。
+- **SHIN 提示の確定事実**:
+  - `executeBatch` 実行済 — Safe→Timelock `0x8Cd71c…9895`、nonce 13、Success、**2026-07-16 19:03:59 JST**。
+  - `registerAdapter` + `setAdapter` 確定 — **Vault `0xb7bD3E44…D8df` が Ethena adapter `0xbf555b98…54ec` に接続**。`activeAdapter = adapter` 想定。
+- **⚠️ 未解決の provenance 不整合(要突き合わせ・B/C のブロッカーではない)**: 上記 activate 済アドレスは、repo の `broadcast/DeployEthenaAdapter.s.sol/1/run-latest.json`(chain 1, ≈2026-07-09)が記録する **デプロイアドレスと不一致**:
+  - repo 記録: SIXXVault `0x933537d1…` / EthenaSUSDeAdapter `0x896becfd…` / Registry `0x0f44fc95…` / Timelock `0x2ae6b837…`
+  - SHIN 提示(live): Vault `0xb7bD3E44…D8df` / adapter `0xbf555b98…54ec` / Timelock(Safe 経由)`0x8Cd71c…9895`
+  → 後続再デプロイの broadcast 記録が repo に取り込まれていない可能性。**live アドレスに対応する deploy broadcast/検証ソースを repo provenance に追記して照合**すべき(`mainnet-gate.md`「デプロイ対象=再凍結タグ=外部監査提出版と一致」要件のため)。TODO として保持。
 
 ## D-B(OPEN)— 外部監査ベンダーの選定・発注
 - **状態**: OPEN(SHIN 決定待ち)。**repo にベンダー名・RFP・engagement letter は無し**。

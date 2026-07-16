@@ -71,10 +71,15 @@
 - **緑**: 非 fork **381**(core/Ethena/hardening/Pendle Unit 含む)+ Pendle fork **25**(VaultFork 6 + LoadedSlippage 7 + AdapterFork 12)。
 - **残(人間 SHIN)**: ③ 再凍結タグ付与(`audit/SCOPE.md` の LoC 表 `wc -l` 更新 + タグ)→ ④ 外部監査発注。`mainnet-gate` は再凍結タグ=監査提出版=(監査後)再デプロイの一致を要求。
 
-### item5 USDY(scope 確定・2026-07-16 着手可)= 設計スカウティング中(コード未着手)
-- スコープ D-C: 中核4+Ethena+Pendle に**順次** Morpho/USDY。USDY は監査ブランチ集約のタイミングで集約予定。
-- **着手前に確定要の設計論点(net-new・盲目コード不可)**: ①変種(USDY 価格累積型 vs rUSDY rebase 型 — rebase は adapter の balance ベース totalAssets 前提に影響)②チェーン(mainnet / Mantle 等)③エントリ/退出(Ondo mint/redeem は KYC・40日ロック等の制約 vs DEX 流動性=item5 の想定)④**transferability/allowlist(KYC)**= USDY は譲渡制限あり得る → adapter が保有可能か・permissionless vault との整合(**潜在ブロッカー**)⑤ valuation/oracle(Ondo 価格源)。
-- **進行**: 設計スカウティング エージェント起動(現物調査+既存アダプタ流儀での設計+要決定+fork テスト計画・**コード未着手**)。結果は本ファイルに追記し SHIN 判断へ。
+### item5 USDY(2026-07-16 設計スカウティング完了)= **現 permissionless vault には統合不可(ハードブロッカー)・要 SHIN/legal go-no-go**
+- **BLOCKER-1(致命・トークン層)**: USDY/rUSDY は **allowlist トークン**(`_beforeTokenTransfer` が from **と** to 双方の `isAllowed()` を要求)。∴ **adapter が USDY を受領する初回 transfer 自体が revert**(adapter が Ondo allowlist 未登録のため)。**Ethena/Pendle の DEX swapper パターンでも救えない**(swap 出力の USDY を adapter へ送る時点で revert)= item5 想定「DEX 流動性→adapter」は**成立しない**。
+- **BLOCKER-2(法務)**: USDY は **Reg S・非米国者限定**(米国人は保有/償還禁止)、primary mint/redeem は KYC-gated。**permissionless USDC vault(米国含む任意の預入者)とは構造的に非整合**。SHIN/legal 判断事項。
+- **BLOCKER-3(流動性/期間)**: 新規 mint に **~40日 Reg-S ロック**(要 live 再確認・出典で 40–50日と幅)+ 二次 DEX 流動性が薄い(~$1.2M/日 vs 時価総額 ~$2.16B、しかも Ethereum 外に偏在)= vault の即時退出前提と不整合。
+- **好材料(唯一)**: USDY 価格は `RWADynamicOracle` で滑らかに累積 → `harvest()` no-op 可(`_lockedProfit=0` 維持・discrete-harvest トラップ dormant)。ただしブロッカーは覆らない。
+- **推奨**: **現 permissionless USDC vault には作らない**。追求するなら要件 =(a)Ondo が adapter/vault アドレスを個別 allowlist(商用/法務交渉・コードでは解決不可)(b)Reg-S/非米国 gated の**別 vault** デプロイ(c)エントリ/退出は Ondo mint/redeem(T+1・20bps・~40日ロック)= **遅延退出の別プロダクト**(即時退出不可・`requiredLockPeriod()≠0`・migration は要 wind-down)。
+- **SHIN 要決定**: ①allowlist go/no-go(Ondo が adapter を allowlist するか)②Reg-S/非米国の法務姿勢(別 gated vault 要否)③遅延(T+1・idle-only)退出プロダクトを許容するか④chain(ETH vs Arbitrum)⑤single-oracle(Chainlink 交差なし・admin override 権限)受容⑥変種=USDY 推奨(rUSDY rebase は balance-delta 会計を壊す)。**⑦ DEX 即時退出が必須要件なら USDY は underlying として不適 → item5 再スコープ/取下げ**。
+- **アドレス(ETH mainnet・July 2026 調査・proxy)**: USDY `0x96F6…985C` / rUSDY `0xaf37…b879` / RWADynamicOracle `0xA021…1De0` / InstantManager `0xa426…1f15`。fork テストは adapter が allowlist 済でない限り全 write revert(=最重要テスト「未 allowlist で deposit revert」)。
+- **状態**: **コード未着手(意図的)**。ブロッカーが商用/法務ゲートのため、engineering 前に SHIN 判断が要る。
 
 ---
 

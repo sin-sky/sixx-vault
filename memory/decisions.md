@@ -22,7 +22,12 @@
 
 **所見①(要修正)**: `run-latest.json` は **#2(orphan)** を指す。live システムは **#1**。deploy-gate/外部監査人が `run-latest` を信頼すると **非 live アドレスを掴む**。→ live=#1 を明示する注記/latest 修正が必要。
 **所見②(good)**: 両 run とも **同一 source commit `6bfe816`**(2026-07-10「PendlePTAdapter terminology-guard 是正」)。∴ 監査対象ソースは source レベルでは一意。
-**所見③(要判断・重要)**: **`6bfe816` は未タグ**(`audit-freeze-*` のいずれでもない)。かつ**現凍結 `audit-freeze-00e90cc`(0de26e7)から乖離大**: `SIXXVault.sol` 517行 / `EthenaSUSDeAdapter.sol` 49行 / `AdapterRegistry.sol` 33行差。→ **live レール(6bfe816)は round-8 v2 ハードニング(force-detach / F-guard 等)を含まない**。SHIN 方針「全修正 → 外部監査 → mainnet 再デプロイ」に従うなら、live 6bfe816 は **pre-hardening のレール(dormant・ユーザー未開放)** と位置づけ、**production は監査済凍結を再デプロイ**し、そのソースにタグを付けて `run-latest`/gate を live に一致させる必要がある。**mainnet-gate.md「デプロイ対象=再凍結タグ=外部監査提出版と一致」は現状みたされていない**(deploy=6bfe816 未タグ ≠ freeze=00e90cc)。→ **D-C(監査スコープ)+ 再凍結の SHIN 判断が必要**。
+**所見③(要判断・重要)**: **`6bfe816` は未タグ**(`audit-freeze-*` のいずれでもない)。かつ**現凍結 `audit-freeze-00e90cc`(0de26e7)から乖離大**: `SIXXVault.sol` 517行 / `EthenaSUSDeAdapter.sol` 49行 / `AdapterRegistry.sol` 33行差。→ **live レール(6bfe816)は round-8 v2 ハードニング(force-detach / F-guard 等)を含まない**。
+
+### 是正決定(CONFIRMED 2026-07-16 SHIN)— 旧 live = 廃棄・監査は最新ハードニング版に一本化
+- **旧 live #1(`0xb7bd3e44…`/`0xbf555b98…`・`6bfe816`・pre-hardening)= 廃棄扱い**。監査もしない・launch もしない(ユーザー未開放を維持)。#2 orphan も廃棄。
+- **監査/production は最新ハードニング版に一本化**:draft 集約 `audit/scope-core-ethena-pendle`(P3 復元込み)を SHIN が **再凍結タグ → 外部監査 → その版を mainnet 再デプロイ + Timelock 結線 = production レール**。
+- **run-latest 是正 済(2026-07-16)**: `broadcast/DeployEthenaAdapter.s.sol/1/PROVENANCE_NOTE.md` を追加 — run-latest が #2 orphan を指す点・#1/#2 とも `6bfe816`=廃棄版である点を明記。JSON は機械可読性のため非改変(companion note で注記)。production デプロイ時に新 broadcast を追加し run-latest を production へ更新する旨も記載。
 
 ## D-B(OPEN)— 外部監査ベンダーの選定・発注
 - **状態**: OPEN(SHIN 決定待ち)。**repo にベンダー名・RFP・engagement letter は無し**。

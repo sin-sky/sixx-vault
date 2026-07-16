@@ -1,6 +1,6 @@
 # SIXX Vault — 監査スコープ（SCOPE）
 
-> 外部監査／専門レビュー用。**凍結コミット `9fa9796`**（`main`・Round 7＝自発 adversarial hardening F-1／F-3 反映済）。solc 0.8.28。
+> 外部監査／専門レビュー用。**再凍結＝ブランチ `audit/scope-core-ethena-pendle` の tip**（タグ `audit-freeze-*` は SHIN が付与＝監査提出版＝デプロイ版）。solc 0.8.28。旧凍結 `9fa9796`（`main`・Round 7・core-only）から**スコープを core4＋Ethena＋Pendle に拡張**：round-8 v2 ハードニング（force-detach／F-guard／`_lockedProfit`）＋Pendle escalate#1 recall-haircut＋**P3 TWAP≥15min 復元**（`twapDuration_ >= 900`）を反映。詳細＝`memory/decisions.md` D-C。
 > （履歴：Round 3 `173e3fb`（Part B P1-P4）→ Round 4 `78aa8c1`（独立 Handoff 監査 M-01〜M-05／L-01）→ Round 5 `0703525`（第2独立レビュー H-01／M-01／L-01／P-02／P-03）→ Round 6 `2e8f059`（第3レビュー：H-02 totalAssets-revert 下でも常に退出可能／M-02 mainnet governance=Timelock 強制／M-03 setAdapter binding 検証／L-02 rescueToken 原資産拒否／L-03 registry list 上限）→ 本 Round 7 `9fa9796`（内部 adversarial：**F-1** M-02 Timelock 強制を本番チェーン集合 `{1,42161,56}` に拡張＝Arbitrum One/BNB の盲点を閉塞／**F-3** Ethena dust withdraw が全清算せず revert／F-2 は運用緩和で対応＝lockPeriod＋slippage 変更 pause）。詳細＝`audit/ADVERSARIAL_HARDENING_2026-07-12.md`／`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
 > 補完文書：入口＝`audit/README_FOR_REVIEWER.md`／既知FP＝`audit/SLITHER_TRIAGE.md`＋`audit/ADERYN_TRIAGE.md`＋`AUDIT_PACKAGE.md §Slither`／等価変異＝`audit/MUTATION_TRIAGE.md`／自前ハードニング＝`PRE_AUDIT_HARDENING.md`。
 
@@ -14,21 +14,21 @@
 
 ## 1. In-Scope（自前 Solidity＝監査対象）
 
-実測 LoC（`9fa9796`・`wc -l`）。**合計 3,156 行 / 17 ファイル**（Round 6 `2e8f059` 比 +44 / ±0 file：SIXXVault +14・AdapterRegistry +12（F-1 `_isProductionChain`）・EthenaSUSDeAdapter +13（F-3 dust guard＋コメント）・VenusUSDTAdapter +5（コメント精度））。
+実測 LoC（再凍結集約 `audit/scope-core-ethena-pendle`・`wc -l`）。**合計 3,336 行 / 17 ファイル**（旧凍結 `9fa9796` の 3,156 比 **+180**：`SIXXVault` +137（round-8 v2 ハードニング＝force-detach／F-guard／`_lockedProfit` streaming）・`PendlePTAdapter` +32（escalate#1 recall-haircut＋P3 TWAP≥15min 復元）・`AaveV3USDCAdapter` +5・`VenusUSDTAdapter` +6；`AdapterRegistry`／`EthenaSUSDeAdapter`／全 IF は同数）。
 
 ### 1.1 コア（会計・ガバナンス）
 | ファイル | LoC | 役割 |
 |---|---:|---|
-| `src/core/SIXXVault.sol` | 690 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03/H-01)・**totalAssets() revert 耐性(H-02)**・setAdapter binding 検証(M-03)・本番チェーン集合で gov=Timelock 強制(M-02/**F-1** `_isProductionChain`) |
+| `src/core/SIXXVault.sol` | 827 | ERC-4626 vault。単一 adapter へ資金ルーティング。share/asset 会計・lock・fee・emergency shutdown・2-step governance・deposit-pause(M-03/H-01)・**totalAssets() revert 耐性(H-02)**・setAdapter binding 検証(M-03)・本番チェーン集合で gov=Timelock 強制(M-02/**F-1** `_isProductionChain`)・**round-8 v2 退出ハードニング：`_exitRealize`(best-effort・never-revert)＋force-detach(`setAdapter(0)`)＋F-guard(valuation 不読で払出0・持分保持)＋`_lockedProfit` profit-streaming** |
 | `src/core/AdapterRegistry.sol` | 155 | ガバナンス whitelist（`isActive`/`registerAdapter`）・list 上限(L-03)・本番チェーン集合で gov=Timelock 強制(M-02/**F-1**) |
 
 ### 1.2 アダプター（各外部プロトコル連携）
 | ファイル | LoC | 連携先（外部＝out-of-scope 本体） |
 |---|---:|---|
-| `src/adapters/AaveV3USDCAdapter.sol` | 278 | Aave V3 Pool（USDC・Arbitrum） |
-| `src/adapters/VenusUSDTAdapter.sol` | 294 | Venus vToken（USDT・BNB） |
+| `src/adapters/AaveV3USDCAdapter.sol` | 283 | Aave V3 Pool（USDC・Arbitrum） |
+| `src/adapters/VenusUSDTAdapter.sol` | 300 | Venus vToken（USDT・BNB） |
 | `src/adapters/EthenaSUSDeAdapter.sol` | 462 | Ethena `StakedUSDeV2` ＋ Curve StableSwap-NG（USDC↔USDe↔sUSDe↔crvUSD）。部分 exit の dust は revert(**F-3**)・NAV×可変 slippage 裁定は運用緩和(F-2) |
-| `src/adapters/PendlePTAdapter.sol` | 604 | Pendle Router V4 ＋ 注入 `IStableSwapper`（USDC↔USDe / sUSDe→USDC）。deposit/withdraw は実残高デルタ検算（M-04/M-05）。swapper は swap 毎 exact-approve→0（M-01：無期限 allowance 廃止） |
+| `src/adapters/PendlePTAdapter.sol` | 636 | Pendle Router V4 ＋ 注入 `IStableSwapper`（USDC↔USDe / sUSDe→USDC）。deposit/withdraw は実残高デルタ検算（M-04/M-05）。swapper は swap 毎 exact-approve→0（M-01：無期限 allowance 廃止）。**escalate#1：recall-haircut `_navFloor`（報告 NAV＝フル退出 min-out を同一式に一致）でハードニング core の M13-16 ガードと合成（未達は fail-close→core が payout0 吸収）。P3：`twapDuration_ >= 900`（TWAP≥15min）復元** |
 
 ### 1.3 インターフェース（自前宣言）
 | 区分 | ファイル（LoC） |

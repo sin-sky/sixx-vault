@@ -75,8 +75,10 @@
 - **USDY = 不採用(REJECTED)**。理由: allowlist/KYC/Reg-S(下記スカウティング所見)で非カストディ・permissionless vault と非整合。①貯めるの「米ドル国債(USDY)」カードは撤去。UI 正 = `threads/design_ux/PRODUCT_UI_MASTER_SPEC.md`(sixx-interface 側・当 repo 外・更新済)。
 - **RWA/米国債枠 → Sky sUSDS に差替**(採用候補・**live:false「準備中」= +0.8% レートゲート待ち**)。即時引出(ERC-4626 redeem)。
 - **エンジニアリング(当 repo)**: sUSDS は Sky Savings USDS の ERC-4626 vault。**既存の汎用 `ERC4626Adapter`(`feat/erc4626-morpho-adapter`)で対応可 = 新規コントラクト不要**(adapter は任意 ERC-4626 vault を immutable param で受ける汎用設計、`ERC4626Adapter.sol:107` で asset 一致を強制)。→ sUSDS は同 adapter の**別デプロイ**。監査面でも**同 adapter コードを流用**(item6 Morpho と同一)ゆえ新規監査サーフェス増なし。
-- **⚠️ 要確認(asset 建て)**: adapter は `targetVault.asset() == sixxVault.asset()` を強制。**sUSDS.asset() = USDS(≠USDC)**。∴ 純粋「直挿し」は **SIXX 側が USDS 建て vault** の場合に成立。USDC 建て vault なら USDC↔USDS(Sky PSM 1:1)変換脚が必要で、汎用 ERC4626Adapter にはそれが無い(= USDS vault を立てる or swapper 版 adapter が要る)。→ **建て通貨(USDS vault か USDC か)の SHIN 確認待ち**。
-- **ゲート/境界**: sUSDS activate は +0.8% レートゲート達成後(人間 SHIN)。当面「準備中」= カードは出すが数値/入金導線は伏せる(Ethena と同じゲート運用)。
+- **建て = (A) USDS 建ての新 Vault(CONFIRMED 2026-07-16 SHIN)**: **USDS 建ての新 `SIXXVault` を1つ立て、sUSDS を既存 `ERC4626Adapter` で直挿し**(変換脚ゼロ・即時引出・監査面最小)。adapter は `targetVault.asset()==sixxVault.asset()` を強制するが、vault=USDS・sUSDS.asset()=USDS で**一致 → クリーン**。
+  - **USDC→USDS は入口 zap(Sky PSM 1:1)で処理** = **entry/periphery 層**(vault/adapter コアの外)。コア会計は USDS 一本で保つ。zap の実体(periphery 契約 or frontend multicall)は build 時に設計・**コア vault/adapter の監査サーフェスに含めない**。
+  - **新規コントラクトコードはゼロ**: 既存 `SIXXVault`(core・監査済系)を USDS 建てでデプロイ + 既存汎用 `ERC4626Adapter`(item6 と同一コード)を target=sUSDS でデプロイ。∴ sUSDS プロダクト = 監査済コードの config/デプロイのみ。
+- **段取り/境界(CONFIRMED)**: **設計方針のみ確定・実ビルド/デプロイは sUSDS 採用(+0.8% レートゲート達成)時に着手**。**今回監査スコープ(core4+Ethena+Pendle)には含めない**(ERC4626Adapter 自体は item6 Morpho として順次監査 → その監査済コードを sUSDS/USDS-vault が流用)。当面「準備中」= カードは出すが数値/入金導線は伏せる(Ethena と同じゲート運用)。activate は人間 SHIN。
 - 以下は撤去した USDY のスカウティング所見(記録保持):
 
 #### USDY スカウティング所見(不採用の根拠・2026-07-16)= 現 permissionless vault には統合不可

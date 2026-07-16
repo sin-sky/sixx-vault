@@ -59,9 +59,12 @@
   - [Med] tight/zero haircut で fail-close DoS 面: `recallHaircutBps` が実 round-trip 未満だとフル recall / `setAdapter` 移行が常時 revert(=0 で確実、上限 3%)。**流動性は off-chain 較正の正しさに依存**。
   - [Med] 部分退出も個別 fail-close(フルへのフォールバック無し)→ UX 層へ申し送り。
   - [Low] PT→sUSDe hop はルータ報告値を信頼(end-to-end floor で安全側・余剰 sUSDe は rescue 可)。[Info] 最終株 redeem 後の orphaned dust(ERC4626 virtual-share 一般性質)。governance setter は atomic+nonReentrant で in-flight 退出を壊さない。
-- **マージ条件(コード修正ではない)**: (a) **loaded-slippage の fail-close fork テスト追加**(sUSDe→USDC 脚に haircut 超の slippage を与え、実 vault ガード経由でフル/部分退出が fail-close することを実証 — 現行 swapper mock は全て par/zero-impact で核心主張が未 stress)、(b) **haircut 較正手順の文書化 + 3% cap が target AUM で十分かの検証**。
-- **未 stress のテストギャップ(マージ前推奨)**: ①loaded-slippage フル退出 fork ②大口サイズ較正(現状 10k–50k のみ) ③slippage 付き部分 recall の vault ガード fork ④最終株 redeem 残余 dust ⑤満期跨ぎ(pre→warp→post)。
-- broadcast/register/setAdapter/activate = SHIN のみ。
+- **マージ条件(コード修正ではない)= 2026-07-16 対応済(PR#2 draft-ready)**:
+  - `feat/pendle-pt-adapter` に **`7a8e151`** を push(テスト/doc のみ・`PendlePTAdapter.sol` 及び production src 無改変・**未マージ**)。
+  - (a) **loaded-slippage fail-close fork テスト追加** = `test/PendlePTAdapterLoadedSlippageFork.t.sol`(6, 全 green): sUSDe→USDC 脚に haircut 超 slippage(25%)を注入し、**フル redeem / 部分 withdraw / setAdapter(0) / setAdapter 移行**が実 vault M13-16 ガード経由で **fail-close(revert・state 無変化)** を実証。par control(slip=0)で「失敗は slippage 起因でハーネス由来でない」を証明。**3% cap でも深 slippage 市場は fail-close**(gap ② tie-in)。
+  - (b) **haircut 較正手順 doc** = `docs/operations/pendle-haircut-calibration.md`: `recallHaircutBps ≥ 実測フル退出ラウンドトリップ(bound size)`、3% cap の対 AUM 検証要件、under-calibration の帰結(退出/移行 fail-close)、UX 申し送り。
+  - **残テストギャップ(任意・後続)**: ④最終株 redeem 残余 dust ⑤満期跨ぎ(pre→warp→post)。
+- broadcast/register/setAdapter/activate = SHIN のみ。**PR#2 は draft-ready(マージは人間)**。
 
 ### item-7 不整合(記録)
 - **feature ブランチが `out/`・`cache/` を追跡したまま**(untrack `935fd12` は本ブランチのみ)。worktree 方式では無害(隔離)だが、各 feature ブランチにも同 untrack を適用すべき(要 commit=別途 SHIN 承認)。

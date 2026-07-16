@@ -30,12 +30,14 @@
 - **決定事項(SHIN 記入待ち)**: ベンダー名 / 発注時期 / 予算 / 提出コミット(=再凍結タグ)。
 - **未記入**: <!-- SHIN: ベンダー・時期をここに記入 → 状態を CONFIRMED へ -->
 
-## D-C(OPEN)— 監査スコープに新アダプターを含めるか
-- **状態**: OPEN(SHIN 決定待ち)。**現行スコープは中核契約のみ**。
-- **repo 証跡**: `audit/SCOPE.md:3` = 凍結 `9fa9796`(Round 7・core)。新アダプター **Ethena / Pendle / Morpho(ERC4626) / USDY** は別ブランチ・未マージで **現スコープ外**。元 RFP=中核4契約(SHIN 認識と一致)。
-- **論点**: mainnet に既にデプロイ済みの Ethena 一式を **未監査のまま activate するか**、それとも SHIN 方針「全修正 → 外部監査 → mainnet 再デプロイ」に従い監査後に activate するか。`docs/operations/mainnet-gate.md` は「デプロイ対象=再凍結タグ=外部監査提出版と一致」を要求 → 新アダプターを含めるなら **スコープ拡張 + 再凍結タグ** が必要。
-- **決定事項(SHIN 記入待ち)**: 含める新アダプターの集合 / 再凍結タグ / activate と監査の順序。
-- **未記入**: <!-- SHIN: 含める/含めない と順序をここに記入 → 状態を CONFIRMED へ -->
+## D-C(CONFIRMED 2026-07-16 SHIN)— 外部監査スコープ = 中核4契約 + Ethena + Pendle(Morpho/USDY 順次)
+- **状態**: CONFIRMED。**監査スコープ = 中核4契約 + Ethena + Pendle**。Morpho(ERC4626)/ USDY は**順次**(後続ラウンド)。
+- **理由**: **Ethena は mainnet activate 済 = 資金先**ゆえ、**未監査のままユーザー開放しない**(だから今回スコープに含める)。Pendle も同時に satellite として含める。Morpho/USDY はまだ資金先でないため順次でよい。
+- **実行順序(SHIN 確定)**: **① Pendle PR#2 条件クリア → ② 新アダプター(Ethena+Pendle)を監査ブランチに集約(凍結 core 上に載せる)→ ③ 再凍結(新タグ)→ ④ 発注**。②③④のうち再凍結・発注は人間 SHIN、集約は draft/ブランチまでエージェント可。
+- **進捗**:
+  - ① **Pendle PR#2 条件クリア済**(2026-07-16、`feat/pendle-pt-adapter` `7a8e151`:loaded-slippage fail-close fork 6 green + 較正 doc。テスト/doc のみ・未マージ)。→ **② 集約に進める状態**(マージ自体は人間)。
+  - **重要リンク(D-A provenance)**: live Ethena レールは `6bfe816`(pre-hardening・未タグ)。監査対象は**②で集約する凍結 aggregate(round-8 v2 ハードニング込)** になるため、**live 6bfe816 とは別ソース**。∴ 監査後に**ハードニング版 Ethena を再デプロイ**し、`run-latest`/gate を新デプロイに一致させるまで **live 6bfe816 はユーザー未開放(準備中)を維持**。
+- **`audit/SCOPE.md` 更新要**: 現行は凍結 `9fa9796`(core のみ)。②の集約・再凍結時に SCOPE を「core4 + Ethena + Pendle」へ拡張し新凍結タグに差し替える(mainnet-gate 要件)。
 
 ---
 

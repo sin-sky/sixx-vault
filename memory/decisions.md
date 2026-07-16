@@ -71,7 +71,15 @@
 - **緑**: 非 fork **381**(core/Ethena/hardening/Pendle Unit 含む)+ Pendle fork **25**(VaultFork 6 + LoadedSlippage 7 + AdapterFork 12)。
 - **残(人間 SHIN)**: ③ 再凍結タグ付与(`audit/SCOPE.md` の LoC 表 `wc -l` 更新 + タグ)→ ④ 外部監査発注。`mainnet-gate` は再凍結タグ=監査提出版=(監査後)再デプロイの一致を要求。
 
-### item5 USDY(2026-07-16 設計スカウティング完了)= **現 permissionless vault には統合不可(ハードブロッカー)・要 SHIN/legal go-no-go**
+### item5 差替(CONFIRMED 2026-07-16 SHIN)= USDY 不採用 → Sky sUSDS(既存 ERC4626Adapter・準備中)
+- **USDY = 不採用(REJECTED)**。理由: allowlist/KYC/Reg-S(下記スカウティング所見)で非カストディ・permissionless vault と非整合。①貯めるの「米ドル国債(USDY)」カードは撤去。UI 正 = `threads/design_ux/PRODUCT_UI_MASTER_SPEC.md`(sixx-interface 側・当 repo 外・更新済)。
+- **RWA/米国債枠 → Sky sUSDS に差替**(採用候補・**live:false「準備中」= +0.8% レートゲート待ち**)。即時引出(ERC-4626 redeem)。
+- **エンジニアリング(当 repo)**: sUSDS は Sky Savings USDS の ERC-4626 vault。**既存の汎用 `ERC4626Adapter`(`feat/erc4626-morpho-adapter`)で対応可 = 新規コントラクト不要**(adapter は任意 ERC-4626 vault を immutable param で受ける汎用設計、`ERC4626Adapter.sol:107` で asset 一致を強制)。→ sUSDS は同 adapter の**別デプロイ**。監査面でも**同 adapter コードを流用**(item6 Morpho と同一)ゆえ新規監査サーフェス増なし。
+- **⚠️ 要確認(asset 建て)**: adapter は `targetVault.asset() == sixxVault.asset()` を強制。**sUSDS.asset() = USDS(≠USDC)**。∴ 純粋「直挿し」は **SIXX 側が USDS 建て vault** の場合に成立。USDC 建て vault なら USDC↔USDS(Sky PSM 1:1)変換脚が必要で、汎用 ERC4626Adapter にはそれが無い(= USDS vault を立てる or swapper 版 adapter が要る)。→ **建て通貨(USDS vault か USDC か)の SHIN 確認待ち**。
+- **ゲート/境界**: sUSDS activate は +0.8% レートゲート達成後(人間 SHIN)。当面「準備中」= カードは出すが数値/入金導線は伏せる(Ethena と同じゲート運用)。
+- 以下は撤去した USDY のスカウティング所見(記録保持):
+
+#### USDY スカウティング所見(不採用の根拠・2026-07-16)= 現 permissionless vault には統合不可
 - **BLOCKER-1(致命・トークン層)**: USDY/rUSDY は **allowlist トークン**(`_beforeTokenTransfer` が from **と** to 双方の `isAllowed()` を要求)。∴ **adapter が USDY を受領する初回 transfer 自体が revert**(adapter が Ondo allowlist 未登録のため)。**Ethena/Pendle の DEX swapper パターンでも救えない**(swap 出力の USDY を adapter へ送る時点で revert)= item5 想定「DEX 流動性→adapter」は**成立しない**。
 - **BLOCKER-2(法務)**: USDY は **Reg S・非米国者限定**(米国人は保有/償還禁止)、primary mint/redeem は KYC-gated。**permissionless USDC vault(米国含む任意の預入者)とは構造的に非整合**。SHIN/legal 判断事項。
 - **BLOCKER-3(流動性/期間)**: 新規 mint に **~40日 Reg-S ロック**(要 live 再確認・出典で 40–50日と幅)+ 二次 DEX 流動性が薄い(~$1.2M/日 vs 時価総額 ~$2.16B、しかも Ethereum 外に偏在)= vault の即時退出前提と不整合。

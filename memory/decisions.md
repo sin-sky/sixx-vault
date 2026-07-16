@@ -39,6 +39,25 @@
   - **重要リンク(D-A provenance)**: live Ethena レールは `6bfe816`(pre-hardening・未タグ)。監査対象は**②で集約する凍結 aggregate(round-8 v2 ハードニング込)** になるため、**live 6bfe816 とは別ソース**。∴ 監査後に**ハードニング版 Ethena を再デプロイ**し、`run-latest`/gate を新デプロイに一致させるまで **live 6bfe816 はユーザー未開放(準備中)を維持**。
 - **`audit/SCOPE.md` 更新要**: 現行は凍結 `9fa9796`(core のみ)。②の集約・再凍結時に SCOPE を「core4 + Ethena + Pendle」へ拡張し新凍結タグに差し替える(mainnet-gate 要件)。
 
+### ② 集約の技術所見(2026-07-16 read-only 調査)= **単純マージ不可・要 SHIN 判断**
+ベース候補と Pendle の実状態:
+- **集約ベース = `audit/round8-hardening`**(= freeze `audit-freeze-00e90cc` src + docs、hardening markers=19、Ethena 込)。**`main`(d961dfc)は markers=9 でハードニング不足=ベース不適**。
+- ベース上の Pendle は **escalate#1 前の旧版**(`recallHaircutBps` 無し)。escalate#1 版は `feat/pendle-pt-adapter` にあるが **pre-hardening 旧 core(markers=0・SIXXVault 517行差)上**で開発。
+- ∴ `git merge feat/pendle-pt-adapter` は **ハードニング core を旧版へ巻き戻す**(危険)。正解は **escalate#1 の Pendle *アダプタ+テスト* だけをハードニング core へ graft**。
+
+**退出モデルの意味論差(重要)** — ハードニング core は escalate#1 開発時の core と退出仕様が変わっている:
+| 経路 | 旧 core(escalate#1 前提) | ハードニング core(ベース) | escalate#1 との両立 |
+|---|---|---|---|
+| 移行 setAdapter(≠0) | strict `require(received≥adapterBal)` | **同左 strict**(:574) | ✅ 両立(fail-close 維持) |
+| setAdapter(0) | strict revert | **force-detach best-effort・never revert**(:728-733) | ⚠️ テスト不整合(revert 期待が崩れる) |
+| ユーザー退出 withdraw/redeem | strict revert on shortfall | **`_exitRealize` best-effort・NEVER revert**(:343, F-guard :390-400) | ⚠️ adapter の fail-close revert を core が try/catch 吸収 → **payout=0・share 保持**(revert しない) |
+
+**結論**:
+- **アダプタ本体(`PendlePTAdapter.sol` escalate#1)はハードニング core と機能的に両立**(fail-close revert を core が吸収し「payout=0・持分保持」に変換=資金は安全)。
+- ただし **escalate#1 の全 Pendle テスト**(`PendlePTAdapterVaultFork` / 新 `LoadedSlippageFork` / `Fork` / `Unit`)は **旧 strict-revert 前提**で書かれており、**ハードニング退出モデル(payout-0/持分保持・force-detach)に合わせて書き換えが必要**。単純 graft では setAdapter(0)/フル退出/部分退出の revert 期待テストが落ちる。
+- **要 SHIN/architect 判断**: escalate#1 の fail-close が **force-detach + F-guard とどう合成されるべきか**(例: 満期前 Pendle 位置を force-detach で write-off する設計が許容か=CLAUDE.md「discrete-harvest 再検証」と同系の残余ストランド論点)。これは監査済退出モデルに触れるため、テスト書換前に方針確定が要る。
+- **未着手(意図的)**: 危険な巻き戻しマージも、退出モデルに反する機械的 graft も**実行していない**(read-only 調査に留めた)。
+
 ---
 
 ## 記録(参考・エージェント read-only 確認)

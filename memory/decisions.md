@@ -58,6 +58,14 @@
 - **要 SHIN/architect 判断**: escalate#1 の fail-close が **force-detach + F-guard とどう合成されるべきか**(例: 満期前 Pendle 位置を force-detach で write-off する設計が許容か=CLAUDE.md「discrete-harvest 再検証」と同系の残余ストランド論点)。これは監査済退出モデルに触れるため、テスト書換前に方針確定が要る。
 - **未着手(意図的)**: 危険な巻き戻しマージも、退出モデルに反する機械的 graft も**実行していない**(read-only 調査に留めた)。
 
+### ② 集約 完了(2026-07-16)= draft ブランチ `audit/scope-core-ethena-pendle`(`b6c72f7`)push 済・未マージ
+- **architect 裁定**(独立):合成は正しく安全 = **テスト期待値の書換のみ・アダプタ改修不要**(退出モデル面)。adapter の fail-close revert を hardened core の `_exitRealize`(best-effort・never-revert)が吸収 → ユーザー経路 payout-0/持分保持、`setAdapter(0)` force-detach、移行(≠0)のみ strict revert 維持。`harvest()` no-op ゆえ discrete-harvest トラップ非該当(`_lockedProfit` 常時0)。満期前 PT の force-detach write-off は許容(PT は detached adapter に保持・回収可)。
+- **graft 実行**: escalate#1 `PendlePTAdapter.sol` + Deploy script + 4テストを **ハードニング core+Ethena(base)へ graft**。旧 `PendlePTAdapterAdversarial.t.sol` 除去。interface/ctor/registerAdapter は base と互換(graft 不要)。
+- **テスト書換(裁定準拠)**: `LoadedSlippageFork` = absorbed-to-0 / force-detach / migration-revert / 柱4 回収。`VaultFork` par partial = best-effort 1-unit 端数許容。`Unit` twap テスト = 復元した 15min 下限。
+- **★ セキュリティ退行を発見・修正(SHIN 承認のコード変更)**: escalate#1 が **Part B P3(TWAP≥15min)ハードニングを緩めて `>0` にしていた**(検査もテストも feature で欠落)。監査前に **`require(twapDuration_ >= 900, "ADAPTER: twap < 15min")` へ復元**。escalate#1 全テスト(TWAP=900)は緑・zero 拒否維持。テスト緩和(退行受容)は SHIN が明示的に却下。
+- **緑**: 非 fork **381**(core/Ethena/hardening/Pendle Unit 含む)+ Pendle fork **25**(VaultFork 6 + LoadedSlippage 7 + AdapterFork 12)。
+- **残(人間 SHIN)**: ③ 再凍結タグ付与(`audit/SCOPE.md` の LoC 表 `wc -l` 更新 + タグ)→ ④ 外部監査発注。`mainnet-gate` は再凍結タグ=監査提出版=(監査後)再デプロイの一致を要求。
+
 ---
 
 ## 記録(参考・エージェント read-only 確認)

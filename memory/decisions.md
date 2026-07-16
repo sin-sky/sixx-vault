@@ -12,10 +12,17 @@
 - **SHIN 提示の確定事実**:
   - `executeBatch` 実行済 — Safe→Timelock `0x8Cd71c…9895`、nonce 13、Success、**2026-07-16 19:03:59 JST**。
   - `registerAdapter` + `setAdapter` 確定 — **Vault `0xb7bD3E44…D8df` が Ethena adapter `0xbf555b98…54ec` に接続**。`activeAdapter = adapter` 想定。
-- **⚠️ 未解決の provenance 不整合(要突き合わせ・B/C のブロッカーではない)**: 上記 activate 済アドレスは、repo の `broadcast/DeployEthenaAdapter.s.sol/1/run-latest.json`(chain 1, ≈2026-07-09)が記録する **デプロイアドレスと不一致**:
-  - repo 記録: SIXXVault `0x933537d1…` / EthenaSUSDeAdapter `0x896becfd…` / Registry `0x0f44fc95…` / Timelock `0x2ae6b837…`
-  - SHIN 提示(live): Vault `0xb7bD3E44…D8df` / adapter `0xbf555b98…54ec` / Timelock(Safe 経由)`0x8Cd71c…9895`
-  → 後続再デプロイの broadcast 記録が repo に取り込まれていない可能性。**live アドレスに対応する deploy broadcast/検証ソースを repo provenance に追記して照合**すべき(`mainnet-gate.md`「デプロイ対象=再凍結タグ=外部監査提出版と一致」要件のため)。TODO として保持。
+### provenance 突き合わせ(2026-07-16 完了)= live ソース特定 + 3つの gate 所見
+`broadcast/DeployEthenaAdapter.s.sol/1/` に **2つの mainnet deploy run** が記録されている(両方 chain 1・**同一 source commit `6bfe816`**):
+
+| run file | timestamp | commit | 内容 | 状態 |
+|---|---|---|---|---|
+| `run-1783670478779.json`(#1) | …478779 | `6bfe816` | Timelock `0x8cd71c5a…9895` / Registry `0xf49ca40f…3473` / **Vault `0xb7bd3e44…d8df`** / **adapter `0xbf555b98…54ec`** | **← LIVE / activate 済**(SHIN 提示と完全一致) |
+| `run-1783671828541.json`(#2)=`run-latest` | …828541 | `6bfe816` | Timelock `0x2ae6b837…` / Registry `0x0f44fc95…` / Vault `0x933537d1…` / adapter `0x896becfd…` | orphan(未 activate) |
+
+**所見①(要修正)**: `run-latest.json` は **#2(orphan)** を指す。live システムは **#1**。deploy-gate/外部監査人が `run-latest` を信頼すると **非 live アドレスを掴む**。→ live=#1 を明示する注記/latest 修正が必要。
+**所見②(good)**: 両 run とも **同一 source commit `6bfe816`**(2026-07-10「PendlePTAdapter terminology-guard 是正」)。∴ 監査対象ソースは source レベルでは一意。
+**所見③(要判断・重要)**: **`6bfe816` は未タグ**(`audit-freeze-*` のいずれでもない)。かつ**現凍結 `audit-freeze-00e90cc`(0de26e7)から乖離大**: `SIXXVault.sol` 517行 / `EthenaSUSDeAdapter.sol` 49行 / `AdapterRegistry.sol` 33行差。→ **live レール(6bfe816)は round-8 v2 ハードニング(force-detach / F-guard 等)を含まない**。SHIN 方針「全修正 → 外部監査 → mainnet 再デプロイ」に従うなら、live 6bfe816 は **pre-hardening のレール(dormant・ユーザー未開放)** と位置づけ、**production は監査済凍結を再デプロイ**し、そのソースにタグを付けて `run-latest`/gate を live に一致させる必要がある。**mainnet-gate.md「デプロイ対象=再凍結タグ=外部監査提出版と一致」は現状みたされていない**(deploy=6bfe816 未タグ ≠ freeze=00e90cc)。→ **D-C(監査スコープ)+ 再凍結の SHIN 判断が必要**。
 
 ## D-B(OPEN)— 外部監査ベンダーの選定・発注
 - **状態**: OPEN(SHIN 決定待ち)。**repo にベンダー名・RFP・engagement letter は無し**。

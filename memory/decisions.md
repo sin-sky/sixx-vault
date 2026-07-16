@@ -71,6 +71,11 @@
 - **緑**: 非 fork **381**(core/Ethena/hardening/Pendle Unit 含む)+ Pendle fork **25**(VaultFork 6 + LoadedSlippage 7 + AdapterFork 12)。
 - **残(人間 SHIN)**: ③ 再凍結タグ付与(`audit/SCOPE.md` の LoC 表 `wc -l` 更新 + タグ)→ ④ 外部監査発注。`mainnet-gate` は再凍結タグ=監査提出版=(監査後)再デプロイの一致を要求。
 
+### item5 USDY(scope 確定・2026-07-16 着手可)= 設計スカウティング中(コード未着手)
+- スコープ D-C: 中核4+Ethena+Pendle に**順次** Morpho/USDY。USDY は監査ブランチ集約のタイミングで集約予定。
+- **着手前に確定要の設計論点(net-new・盲目コード不可)**: ①変種(USDY 価格累積型 vs rUSDY rebase 型 — rebase は adapter の balance ベース totalAssets 前提に影響)②チェーン(mainnet / Mantle 等)③エントリ/退出(Ondo mint/redeem は KYC・40日ロック等の制約 vs DEX 流動性=item5 の想定)④**transferability/allowlist(KYC)**= USDY は譲渡制限あり得る → adapter が保有可能か・permissionless vault との整合(**潜在ブロッカー**)⑤ valuation/oracle(Ondo 価格源)。
+- **進行**: 設計スカウティング エージェント起動(現物調査+既存アダプタ流儀での設計+要決定+fork テスト計画・**コード未着手**)。結果は本ファイルに追記し SHIN 判断へ。
+
 ---
 
 ## 記録(参考・エージェント read-only 確認)

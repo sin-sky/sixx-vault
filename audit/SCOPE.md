@@ -4,6 +4,12 @@
 > （履歴：Round 3 `173e3fb`（Part B P1-P4）→ Round 4 `78aa8c1`（独立 Handoff 監査 M-01〜M-05／L-01）→ Round 5 `0703525`（第2独立レビュー H-01／M-01／L-01／P-02／P-03）→ Round 6 `2e8f059`（第3レビュー：H-02 totalAssets-revert 下でも常に退出可能／M-02 mainnet governance=Timelock 強制／M-03 setAdapter binding 検証／L-02 rescueToken 原資産拒否／L-03 registry list 上限）→ 本 Round 7 `9fa9796`（内部 adversarial：**F-1** M-02 Timelock 強制を本番チェーン集合 `{1,42161,56}` に拡張＝Arbitrum One/BNB の盲点を閉塞／**F-3** Ethena dust withdraw が全清算せず revert／F-2 は運用緩和で対応＝lockPeriod＋slippage 変更 pause）。詳細＝`audit/ADVERSARIAL_HARDENING_2026-07-12.md`／`SIXX_Vault_Handoff_Audit_Report.md`／`THREAT_COUNCIL_REMAINING_2026-07-11.md`／`REMEDIATION_PROPOSALS.md`。）
 > 補完文書：入口＝`audit/README_FOR_REVIEWER.md`／既知FP＝`audit/SLITHER_TRIAGE.md`＋`audit/ADERYN_TRIAGE.md`＋`AUDIT_PACKAGE.md §Slither`／等価変異＝`audit/MUTATION_TRIAGE.md`／自前ハードニング＝`PRE_AUDIT_HARDENING.md`。
 
+> **【監査スコープ集約 delta（2026-07-16・D-C 確定）】** 本バンドルは中核4契約＋**Ethena**＋**Pendle** を対象とする（Morpho/USDY は順次・別ラウンド）。ベース＝round-8 v2 ハードニング済コア＋Ethena。ここに **Pendle escalate#1（recall-haircut）版 `PendlePTAdapter.sol` を集約**：
+> - **`_navFloor` recall-haircut**（報告 NAV＝フル退出 withdraw min-out を同一式に一致 → SIXXVault M13-16 ガードが完了退出で恒真、未達は fail-close）。既定 `recallHaircutBps=50`(0.5%)・上限 `MAX_RECALL_HAIRCUT_BPS=300`(3%)・`setRecallHaircutBps`(gov)。較正手順＝`docs/operations/pendle-haircut-calibration.md`。
+> - **合成（ARCH_RULING）**: adapter の fail-close revert を、ハードニングコアの `_exitRealize`（best-effort・never-revert）が吸収 → ユーザー経路は payout=0・持分保持、`setAdapter(0)` は force-detach、移行 `setAdapter(≠0)` のみ strict revert 維持。`harvest()` は no-op（`_lockedProfit` 常時0＝discrete-harvest トラップ非該当）。
+> - **P3 再ハードニング復元**: escalate#1 が緩めていた TWAP 下限を **`require(twapDuration_ >= 900, "ADAPTER: twap < 15min")`（Part B P3/OR2）に復元**（監査前に固定）。
+> - 追加テスト: `test/PendlePTAdapterLoadedSlippageFork.t.sol`（loaded-slippage の吸収/force-detach/移行 revert/回収）＋更新済 `PendlePTAdapterVaultFork`/`Fork`/`Unit`。**再凍結タグは SHIN が付与**（本 delta 反映後）。LoC 表（§1.2 Pendle 行）は再凍結時に `wc -l` で更新。
+
 ---
 
 ## 1. In-Scope（自前 Solidity＝監査対象）

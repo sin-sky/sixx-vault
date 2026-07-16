@@ -11,7 +11,7 @@ import {
     SwapData,
     SwapType
 } from "../interfaces/IPendleRouter.sol";
-import {IPendleMarket, IPendlePrincipalToken, IPendleSY, IPPtOracle, ISUSDeConvert} from "../interfaces/IPendleCore.sol";
+import {IPendleMarket, IPendlePrincipalToken, IPendleSY, IPPtOracle} from "../interfaces/IPendleCore.sol";
 import {IStableSwapper} from "../interfaces/IStableSwapper.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -34,12 +34,28 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///                    pre-maturity  = swapExactPtForToken (market price, slippage bound)
 ///                    post-maturity = redeemPyToToken     (par redemption)
 ///
-///      Accounting (totalAssets, USDC 6-dec):
-///        pre-maturity  = min(Pendle TWAP PtToAssetRate, 1e18) * ptBal, USDe≈USDC par
-///        post-maturity = par (rate = 1e18)
+///      Accounting (totalAssets, USDC 6-dec) — recall-haircut applied so the
+///      reported NAV equals the CONSERVATIVE realizable value (A-parity with
+///      EthenaSUSDeAdapter):
+///        pre-maturity  = min(Pendle TWAP PtToAssetRate, 1e18) * ptBal * (1 - recallHaircutBps)
+///        post-maturity = par * (1 - recallHaircutBps)   (PT redeems 1:1, but the
+///                        sUSDe->USDC exit leg still carries slippage, so the same
+///                        haircut applies)
 ///      The TWAP oracle (not spot) is the only external price in the accounting
 ///      core, capped at par so it can never over-mark. Market spot never enters
 ///      accounting (ADR-004 §4). Truncation is always vault-favorable.
+///
+///      Why the haircut (escalate#1 / ARCH_RULING): the SIXXVault enforces
+///      `received >= toWithdraw` on a user recall and `received >= adapterBal` on
+///      a `setAdapter` migration (M13-16). A pre-maturity PT realizes BELOW its
+///      un-haircut TWAP mark (market price + swap legs), so an un-haircut NAV made
+///      a full recall / migration revert. By reporting NAV at `mark * (1-haircut)`
+///      AND using that exact figure as the end-to-end withdraw min-out, any exit
+///      that COMPLETES delivers >= reported NAV — so the guard holds (identical to
+///      the Ethena adapter). If the market cannot realize the haircut NAV (spot
+///      gapped below the TWAP by more than the haircut), the withdraw reverts
+///      (fail-close, no funds move); the emergency valve is shutdown + small
+///      partial exits + par redemption at maturity.
 ///
 /// @dev Ethereum mainnet reference deployment (PT-sUSDe, expiry 2026-08-13):
 ///        USDC        0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 (6 dec)
@@ -62,6 +78,9 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
     uint256 internal constant SECONDS_PER_YEAR = 365 days;
     /// @notice Hard ceiling on the per-leg slippage tolerance governance can set.
     uint256 internal constant MAX_SLIPPAGE_BPS = 300; // 3%
+    /// @notice Hard ceiling on the recall haircut governance can set (applied to
+    ///         the reported NAV and, identically, to the withdraw min-out).
+    uint256 internal constant MAX_RECALL_HAIRCUT_BPS = 300; // 3%
     /// @notice Padding above the analytical PT upper bound for the router's
     ///         binary-search guessMax (covers TWAP-vs-spot divergence).
     uint256 internal constant GUESS_MAX_PAD_BPS = 200; // +2%
@@ -110,8 +129,19 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
     /// @notice Injected stablecoin swapper (USDC<->USDe, sUSDe->USDC)
     IStableSwapper public swapper;
 
-    /// @notice Per-leg slippage tolerance in bps (default 0.5%)
+    /// @notice Per-leg slippage tolerance in bps (default 0.5%), used on the
+    ///         deposit legs and as the intermediate-swap padding.
     uint256 public slippageBps;
+
+    /// @notice Recall haircut in bps (default 0.5%). Discounts the reported NAV to
+    ///         the amount realizable through a full exit, and is the SAME figure
+    ///         used as the end-to-end withdraw min-out — this equality is what
+    ///         makes the vault's `received >= toWithdraw` / `received >= adapterBal`
+    ///         guard hold on any completing full recall / migration (A-parity).
+    ///         Governance must calibrate this >= the measured PT round-trip
+    ///         (market impact + sUSDe->USDC leg + TWAP-vs-spot cushion) for the
+    ///         bound position size; see ARCH_RULING escalate#1 §3-4.
+    uint256 public recallHaircutBps;
 
     address public vault;
     address public pendingVault;
@@ -130,6 +160,7 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
     event GovernanceAccepted(address indexed newGovernance);
     event TokenRescued(address indexed token, address indexed to, uint256 amount);
     event SlippageUpdated(uint256 oldBps, uint256 newBps);
+    event RecallHaircutUpdated(uint256 oldBps, uint256 newBps);
     event SwapperUpdated(address indexed oldSwapper, address indexed newSwapper);
 
     // =========================================
@@ -159,7 +190,7 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         require(pendleRouter_ != address(0), "ADAPTER: zero router");
         require(ptOracle_     != address(0), "ADAPTER: zero oracle");
         require(swapper_      != address(0), "ADAPTER: zero swapper");
-        require(twapDuration_ >= 900,        "ADAPTER: twap < 15min"); // Part B P3 (OR2): min 15-min TWAP
+        require(twapDuration_ >= 900,        "ADAPTER: twap < 15min"); // Part B P3 (OR2): min 15-min TWAP (restored in audit-scope aggregate; escalate#1 had relaxed this to >0)
         require(vault_        != address(0), "ADAPTER: zero vault");
         require(governance_   != address(0), "ADAPTER: zero governance");
 
@@ -183,40 +214,27 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         susde  = r.susde;
         expiry = r.expiry;
 
-        slippageBps = 50; // 0.5% default (matches Part A)
+        slippageBps = 50;      // 0.5% default (matches Part A)
+        recallHaircutBps = 50; // 0.5% default; governance calibrates per size (ARCH_RULING §3-4)
 
-        _initApprovals(r.usde, r.pt, pendleRouter_);
+        _initApprovals(asset_, r.susde, r.usde, r.pt, swapper_, pendleRouter_);
     }
 
-    /// @dev Grant the standing router approvals in a separate frame (constructor stack).
-    ///      The router pulls USDe (buy PT) + PT (sell / redeem PT); it is the immutable,
-    ///      trusted Pendle protocol contract.
-    ///      M-01 (2nd review): the swapper is DELIBERATELY not granted a standing
-    ///      allowance here. Each swap scope-approves exactly what it needs and resets
-    ///      the allowance to 0 (see `_swapVia`), so a later-compromised/misconfigured
-    ///      swapper can never pull idle USDC/sUSDe that transits the adapter.
+    /// @dev Grant the standing approvals in a separate frame (constructor stack).
+    ///      swapper pulls USDC (deposit) + sUSDe (withdraw); router pulls USDe
+    ///      (buy PT) + PT (sell / redeem PT).
     function _initApprovals(
+        address asset_,
+        address susde_,
         address usde_,
         address pt_,
+        address swapper_,
         address router_
     ) private {
+        IERC20(asset_).forceApprove(swapper_, type(uint256).max);
+        IERC20(susde_).forceApprove(swapper_, type(uint256).max);
         IERC20(usde_).forceApprove(router_, type(uint256).max);
         IERC20(pt_).forceApprove(router_, type(uint256).max);
-    }
-
-    /// @dev M-01 (2nd review): run a swapper leg under a single-use, exact-amount
-    ///      allowance — approve exactly `amountIn`, execute the swap, then reset the
-    ///      allowance to 0 unconditionally (covers a swapper that pulls less than
-    ///      approved). The swapper thus never holds a standing allowance. The return
-    ///      value is intentionally ignored by callers, which re-derive the received
-    ///      amount from a balance delta (M-04); this helper preserves that guard.
-    function _swapVia(address tokenIn, address tokenOut, uint256 amountIn, uint256 minOut)
-        internal
-        returns (uint256 amountOut)
-    {
-        IERC20(tokenIn).forceApprove(address(swapper), amountIn);
-        amountOut = swapper.swap(tokenIn, tokenOut, amountIn, minOut, address(this));
-        IERC20(tokenIn).forceApprove(address(swapper), 0);
     }
 
     /// @dev Reads Pendle's token set from the market, cross-checks PT<->SY<->YT and
@@ -263,16 +281,20 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
     // Core: IStrategyAdapter
     // =========================================
 
-    /// @notice USDC value of the held PT plus any idle USDC dust.
+    /// @notice Conservative (recall-haircut) USDC value of the held PT plus any
+    ///         idle USDC dust.
     /// @dev Pre-maturity: PT marked at the manipulation-resistant Pendle TWAP,
-    ///      capped at par. Post-maturity: par (PT redeems 1:1). USDe≈USDC 1:1
-    ///      (depeg is a disclosed risk, not priced by a spot). All divisions
+    ///      capped at par. Post-maturity: par (PT redeems 1:1). Both are then
+    ///      discounted by `recallHaircutBps` so the reported NAV equals the amount
+    ///      a full exit realizes (see `_navFloor`); this equality is what keeps the
+    ///      vault's shortfall guard satisfied on a full recall / migration. USDe≈USDC
+    ///      1:1 (depeg is a disclosed risk, not priced by a spot). All divisions
     ///      truncate → conservative (under-reports), i.e. vault-favorable.
     function totalAssets() external view override returns (uint256) {
         uint256 idle = IERC20(asset).balanceOf(address(this));
         uint256 ptBal = pt.balanceOf(address(this));
         if (ptBal == 0) return idle;
-        return _usdeToUsdc(_ptValueInUsde(ptBal)) + idle;
+        return _navFloor(ptBal) + idle;
     }
 
     /// @notice Vault sends USDC here, then calls this. USDC -> USDe -> PT.
@@ -285,15 +307,9 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         require(block.timestamp < expiry, "ADAPTER: matured");
 
         // Leg 1: USDC -> USDe (par-referenced min-out).
-        // M-04: size the Pendle leg from the ACTUAL USDe received (balance delta), never
-        //   the swapper's return value. A faulty/compromised/misconfigured swapper could
-        //   pull the full USDC yet return (or deliver) a smaller amount; trusting that lie
-        //   would build a position smaller than the shares the vault already minted.
         uint256 usdeMin = _applySlip(_usdcToUsde(assets));
-        uint256 usdeBefore = IERC20(usde).balanceOf(address(this));
-        _swapVia(asset, usde, assets, usdeMin); // M-01: scoped, single-use approval
-        uint256 usdeIn = IERC20(usde).balanceOf(address(this)) - usdeBefore;
-        require(usdeIn >= usdeMin, "ADAPTER: swap shortfall");
+        uint256 usdeIn = swapper.swap(asset, usde, assets, usdeMin, address(this));
+        require(usdeIn > 0, "ADAPTER: no usde");
 
         // Leg 2: USDe -> PT via the market AMM.
         uint256 rate = _ptToAssetRate();                 // PT->USDe, <1e18 pre-maturity
@@ -315,23 +331,24 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
             swapData: SwapData({swapType: SwapType.NONE, extRouter: address(0), extCalldata: "", needScale: false})
         });
 
-        // M-04: also measure the PT balance delta rather than trusting the router's
-        //   reported out — require the position actually grew by at least the min-out.
-        uint256 ptBefore = pt.balanceOf(address(this));
         pendleRouter.swapExactTokenForPt(address(this), market, minPtOut, guess, input, _emptyLimit());
-        uint256 ptGained = pt.balanceOf(address(this)) - ptBefore;
-        require(ptGained >= minPtOut, "ADAPTER: pt shortfall");
 
         deposited = assets;
         emit Deposited(assets, deposited);
     }
 
     /// @notice Liquidate PT to deliver USDC to `recipient`.
-    /// @dev Full exit (assets >= totalAssets) liquidates the entire PT balance and
-    ///      forwards everything realized. Partial exit liquidates a slippage-buffered
-    ///      proportional slice. Pre-maturity uses the AMM (market price); post-maturity
-    ///      redeems at par. The vault's own `received >= toWithdraw` guard reverts a
-    ///      request the AMM cannot satisfy (early-exit-below-mark is a disclosed risk).
+    /// @dev Full exit (assets >= totalAssets) liquidates the entire PT balance; the
+    ///      end-to-end min-out is set to the FULL reported NAV of that PT
+    ///      (`_navFloor`), so a completing exit delivers >= reported NAV and the
+    ///      vault's `received >= toWithdraw` / `received >= adapterBal` guard holds.
+    ///      Partial exit liquidates a haircut-sized proportional slice and floors
+    ///      the realized USDC at the requested amount (surplus stays idle).
+    ///      Pre-maturity uses the market (Pendle AMM); post-maturity redeems at par.
+    ///      The intermediate PT->sUSDe hop is unfloored (min-out 0, like the Ethena
+    ///      adapter); the authoritative floor is enforced on the final sUSDe->USDC
+    ///      hop. If the market cannot realize the floor, the whole call reverts
+    ///      (fail-close, no funds move).
     function withdraw(uint256 assets, address recipient)
         external override onlyVault nonReentrant returns (uint256 withdrawn)
     {
@@ -349,59 +366,52 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         uint256 ptBal = pt.balanceOf(address(this));
         require(ptBal > 0, "ADAPTER: no position");
 
-        uint256 ta = _usdeToUsdc(_ptValueInUsde(ptBal)) + idle0; // == totalAssets()
+        uint256 navPt = _navFloor(ptBal);   // haircut NAV backed by PT (USDC)
+        uint256 ta = navPt + idle0;          // == totalAssets()
         bool fullExit = assets >= ta;
 
         uint256 ptToLiq;
+        uint256 minUsdcOut;                  // end-to-end USDC floor on the PT sale
         if (fullExit) {
             ptToLiq = ptBal;
+            // Deliver at least the full reported NAV of the PT — identical to
+            // totalAssets(), so `received >= toWithdraw`/`received >= adapterBal`
+            // is structurally satisfied whenever the exit completes.
+            minUsdcOut = navPt;
         } else {
-            uint256 ptMarkUsdc = ta - idle0;                       // USDC value backed by PT
             uint256 targetFromPt = assets - idle0;
-            // M-05: the exit crosses TWO slippage-bounded legs (PT->sUSDe, then sUSDe->USDC).
-            //   Buffering a single leg let both legs clear at their configured min-out and
-            //   still deliver below the request, reverting an ordinary partial exit at the
-            //   vault's `received >= toWithdraw` guard (a liveness failure, not theft).
-            //   Compound the gross-up over both legs with round-up (ceil) math so a partial
-            //   exit that stays within the per-leg slippage bound remains serviceable.
-            uint256 slipDenom = BPS - slippageBps;
-            uint256 buffered = (targetFromPt * BPS * BPS + slipDenom * slipDenom - 1)
-                / (slipDenom * slipDenom);
-            ptToLiq = (ptBal * buffered) / ptMarkUsdc;
+            // Size the PT slice so its haircut NAV covers the request; ceil-div so
+            // we never under-liquidate. `navPt > 0` here (see docs) — reaching this
+            // branch requires assets < navPt + idle0 and assets > idle0.
+            ptToLiq = (ptBal * targetFromPt + navPt - 1) / navPt;
             if (ptToLiq > ptBal) ptToLiq = ptBal;
             require(ptToLiq > 0, "ADAPTER: dust");
+            // Only the requested amount must clear; the haircut margin realized on
+            // top is left idle for the next call.
+            minUsdcOut = targetFromPt;
         }
 
-        // Leg 1: PT -> sUSDe (min-out from the marked USDe value of the slice).
-        uint256 susdeMin = _applySlip(_usdeToSusde(_ptValueInUsde(ptToLiq)));
+        // Leg 1: PT -> sUSDe. Intermediate hop, min-out 0 (the end-to-end floor is
+        // enforced on leg 2). Pre-maturity = market price; post-maturity = par.
         TokenOutput memory out = TokenOutput({
             tokenOut: susde,
-            minTokenOut: susdeMin,
+            minTokenOut: 0,
             tokenRedeemSy: susde,
             pendleSwap: address(0),
             swapData: SwapData({swapType: SwapType.NONE, extRouter: address(0), extCalldata: "", needScale: false})
         });
 
-        // M-04 (R8-2): size Leg 2 from the ACTUAL sUSDe received (balance delta), never the
-        //   router's reported out. The deposit path derives every amount from a balance delta;
-        //   the exit path must be symmetric. A router that over-reports would otherwise make
-        //   _swapVia pull more sUSDe than the adapter holds (withdraw DoS), and an under-report
-        //   would deflate the Leg-2 slippage floor below what the position warrants.
         uint256 susdeOut;
-        {
-            uint256 susdeBefore = IERC20(susde).balanceOf(address(this));
-            if (block.timestamp >= expiry) {
-                pendleRouter.redeemPyToToken(address(this), yt, ptToLiq, out);
-            } else {
-                pendleRouter.swapExactPtForToken(address(this), market, ptToLiq, out, _emptyLimit());
-            }
-            susdeOut = IERC20(susde).balanceOf(address(this)) - susdeBefore;
-            require(susdeOut >= susdeMin, "ADAPTER: susde shortfall");
+        if (block.timestamp >= expiry) {
+            (susdeOut,) = pendleRouter.redeemPyToToken(address(this), yt, ptToLiq, out);
+        } else {
+            (susdeOut,,) = pendleRouter.swapExactPtForToken(address(this), market, ptToLiq, out, _emptyLimit());
         }
 
-        // Leg 2: sUSDe -> USDC.
-        uint256 usdcMin = _applySlip(_usdeToUsdc(_susdeToUsde(susdeOut)));
-        _swapVia(susde, asset, susdeOut, usdcMin); // M-01: scoped, single-use approval
+        // Leg 2: sUSDe -> USDC, reverting if realized < minUsdcOut. On a full exit
+        // minUsdcOut == reported NAV of the PT, so this is the fail-close valve that
+        // keeps the vault guard honest without ever silently under-delivering.
+        swapper.swap(susde, asset, susdeOut, minUsdcOut, address(this));
 
         // Deliver: full exit forwards everything realized; partial caps at `assets`
         // and leaves any surplus idle for the next call.
@@ -436,6 +446,17 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         return (ptAmount * _ptToAssetRate()) / 1e18;
     }
 
+    /// @dev Conservative recall-haircut USDC (6 dec) value of `ptAmount` PT at the
+    ///      TWAP-capped mark. This single formula is used for BOTH the reported NAV
+    ///      (totalAssets) and the full-exit withdraw min-out, so a completing full
+    ///      recall / migration delivers >= reported NAV (A-parity with the Ethena
+    ///      adapter). Multiply-before-divide for precision; the final truncation is
+    ///      vault-favorable (never over-reports).
+    function _navFloor(uint256 ptAmount) internal view returns (uint256) {
+        uint256 usdeVal = _ptValueInUsde(ptAmount); // 18 dec, TWAP-capped
+        return _usdeToUsdc((usdeVal * (BPS - recallHaircutBps)) / BPS);
+    }
+
     /// @dev USDe (18 dec) -> USDC (6 dec), par 1:1, truncated.
     function _usdeToUsdc(uint256 usdeAmount) internal pure returns (uint256) {
         return usdeAmount / 1e12;
@@ -444,18 +465,6 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
     /// @dev USDC (6 dec) -> USDe (18 dec), par 1:1.
     function _usdcToUsde(uint256 usdcAmount) internal pure returns (uint256) {
         return usdcAmount * 1e12;
-    }
-
-    /// @dev USDe value (18 dec) -> sUSDe amount (18 dec) via the protocol-internal
-    ///      ERC-4626 rate (not a spot). Used only to size a conservative min-out.
-    function _usdeToSusde(uint256 usdeAmount) internal view returns (uint256) {
-        uint256 usdePerSusde = ISUSDeConvert(susde).convertToAssets(1e18);
-        return (usdeAmount * 1e18) / usdePerSusde;
-    }
-
-    /// @dev sUSDe amount (18 dec) -> USDe value (18 dec) via the internal rate.
-    function _susdeToUsde(uint256 susdeAmount) internal view returns (uint256) {
-        return ISUSDeConvert(susde).convertToAssets(susdeAmount);
     }
 
     function _applySlip(uint256 x) internal view returns (uint256) {
@@ -552,17 +561,30 @@ contract PendlePTAdapter is IStrategyAdapter, ReentrancyGuard {
         slippageBps = newBps;
     }
 
+    /// @notice Update the recall haircut (bps), capped at MAX_RECALL_HAIRCUT_BPS.
+    /// @dev Must be calibrated >= the measured full-exit round-trip for the bound
+    ///      position size (market impact + sUSDe->USDC leg + TWAP-vs-spot cushion),
+    ///      otherwise full recalls / migrations fail-close more often. It never
+    ///      risks principal: NAV and the withdraw floor move together, so the vault
+    ///      guard stays honest for any value (ARCH_RULING escalate#1 §3-4).
+    function setRecallHaircutBps(uint256 newBps) external {
+        require(msg.sender == governance, "ADAPTER: not governance");
+        require(newBps <= MAX_RECALL_HAIRCUT_BPS, "ADAPTER: haircut too high");
+        emit RecallHaircutUpdated(recallHaircutBps, newBps);
+        recallHaircutBps = newBps;
+    }
+
     /// @notice Swap out the injected stablecoin swapper (e.g. re-route Curve pools).
-    /// @dev M-01 (2nd review): no standing allowances are granted to the new swapper —
-    ///      each swap scope-approves per call (see `_swapVia`). Any residual allowance to
-    ///      the old swapper is defensively zeroed (normally already 0 after every swap).
     function setSwapper(address newSwapper) external {
         require(msg.sender == governance, "ADAPTER: not governance");
         require(newSwapper != address(0), "ADAPTER: zero swapper");
         address old = address(swapper);
+        // Revoke the old approvals, grant to the new swapper.
         IERC20(asset).forceApprove(old, 0);
         IERC20(susde).forceApprove(old, 0);
         swapper = IStableSwapper(newSwapper);
+        IERC20(asset).forceApprove(newSwapper, type(uint256).max);
+        IERC20(susde).forceApprove(newSwapper, type(uint256).max);
         emit SwapperUpdated(old, newSwapper);
     }
 

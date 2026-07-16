@@ -72,7 +72,8 @@
 - **残(人間 SHIN)**: ③ 再凍結タグ付与(`audit/SCOPE.md` の LoC 表 `wc -l` 更新 + タグ)→ ④ 外部監査発注。`mainnet-gate` は再凍結タグ=監査提出版=(監査後)再デプロイの一致を要求。
 
 ### item5 差替(CONFIRMED 2026-07-16 SHIN)= USDY 不採用 → Sky sUSDS(既存 ERC4626Adapter・準備中)
-- **USDY = 不採用(REJECTED)**。理由: allowlist/KYC/Reg-S(下記スカウティング所見)で非カストディ・permissionless vault と非整合。①貯めるの「米ドル国債(USDY)」カードは撤去。UI 正 = `threads/design_ux/PRODUCT_UI_MASTER_SPEC.md`(sixx-interface 側・当 repo 外・更新済)。
+- **USDY = 不採用(REJECTED)**。①貯めるの「米ドル国債(USDY)」カードは撤去。NO-GO は2段階(両方正):**2026-07-10 初期 NO-GO**(Track5=ERC4626 非準拠/即時退出不可)→ **2026-07-16 再確認**(allowlist/KYC/Reg-S 詳細=非カストディ・permissionless vault 非整合、下記スカウティング所見)。
+- **UI 正典 = `sixx-workspace/threads/design_ux/PRODUCT_UI_MASTER_SPEC.md`(remote: sin-sky/**`sixx-workspace`**・当 repo 外)。sUSDS 差替は workspace 側で適用・push 済(`5bb32d8`)。** ※当 repo の `docs/operations/ui-spec-edit-usdy-to-susds.md` は当時 sixx-interface と誤認したハンドオフ = 冗長・解決済(放置)。
 - **RWA/米国債枠 → Sky sUSDS に差替**(採用候補・**live:false「準備中」= +0.8% レートゲート待ち**)。即時引出(ERC-4626 redeem)。
 - **エンジニアリング(当 repo)**: sUSDS は Sky Savings USDS の ERC-4626 vault。**既存の汎用 `ERC4626Adapter`(`feat/erc4626-morpho-adapter`)で対応可 = 新規コントラクト不要**(adapter は任意 ERC-4626 vault を immutable param で受ける汎用設計、`ERC4626Adapter.sol:107` で asset 一致を強制)。→ sUSDS は同 adapter の**別デプロイ**。監査面でも**同 adapter コードを流用**(item6 Morpho と同一)ゆえ新規監査サーフェス増なし。
 - **建て = (A) USDS 建ての新 Vault(CONFIRMED 2026-07-16 SHIN)**: **USDS 建ての新 `SIXXVault` を1つ立て、sUSDS を既存 `ERC4626Adapter` で直挿し**(変換脚ゼロ・即時引出・監査面最小)。adapter は `targetVault.asset()==sixxVault.asset()` を強制するが、vault=USDS・sUSDS.asset()=USDS で**一致 → クリーン**。

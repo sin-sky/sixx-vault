@@ -1,3 +1,5 @@
+> **✅ SUPERSEDED / 解決済(2026-07-16)**: 本ハンドオフは不要。正典は sixx-interface ではなく **`sixx-workspace/threads/design_ux/PRODUCT_UI_MASTER_SPEC.md`**(remote: sin-sky/`sixx-workspace`)にあり、sUSDS 差替は **workspace 側で適用・push 済(`5bb32d8`)**。以下は当時の(誤リポジトリ想定の)指示=記録として放置。
+
 # UI 正典編集指示 → `sixx-interface: threads/design_ux/PRODUCT_UI_MASTER_SPEC.md`
 
 > 出所: SHIN 訂正 2026-07-16(USDY NO-GO → RWA/米国債枠は Sky sUSDS)。**この repo(sixx-vault)からは

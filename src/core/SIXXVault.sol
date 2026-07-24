@@ -47,6 +47,14 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     address public override feeRecipient;
     bool public override emergencyShutdown;
 
+    /// @dev 3-C: optional on-chain deposit cap, denominated in underlying asset units,
+    ///      to bound the TVL routed into thin-exit-liquidity strategies (e.g. BNB via
+    ///      Lista slisBNB, whose deepest exit venue is ~$2.5M). Defaults to
+    ///      type(uint256).max (= unlimited, preserving the pre-existing behavior for
+    ///      all other vaults). Gates deposits/mints only; withdrawals are never blocked
+    ///      (ADR-007 liveness preserved).
+    uint256 public override depositCap;
+
     /// @dev Amount of assets currently deployed to the active adapter
     uint256 private _totalDebt;
     /// @dev Timestamp of last fee collection
@@ -89,6 +97,7 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
         guardian = guardian_;
         _lastHarvestTimestamp = block.timestamp;
         _lastReport = block.timestamp;
+        depositCap = type(uint256).max; // 3-C: unlimited by default; governance may tighten per vault
     }
 
     // =========================================
@@ -181,12 +190,20 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
 
     function maxDeposit(address) public view override(ERC4626, IERC4626) returns (uint256) {
         if (emergencyShutdown) return 0;
-        return type(uint256).max;
+        uint256 cap = depositCap;
+        if (cap == type(uint256).max) return type(uint256).max;
+        uint256 assets = totalAssets();
+        return assets >= cap ? 0 : cap - assets;
     }
 
     function maxMint(address) public view override(ERC4626, IERC4626) returns (uint256) {
         if (emergencyShutdown) return 0;
-        return type(uint256).max;
+        uint256 cap = depositCap;
+        if (cap == type(uint256).max) return type(uint256).max;
+        uint256 assets = totalAssets();
+        // Convert the remaining asset headroom to shares (floor) so mint() cannot
+        // overshoot the cap. previewDeposit == _convertToShares(_, Floor).
+        return assets >= cap ? 0 : previewDeposit(cap - assets);
     }
 
     /// @dev H-4: Surface the lock state through the ERC-4626 max* views so that
@@ -381,6 +398,16 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     function setLockPeriod(uint256 newPeriod) external override onlyGovernance {
         emit LockPeriodUpdated(lockPeriod, newPeriod);
         lockPeriod = newPeriod;
+    }
+
+    /// @notice Set the deposit cap in underlying asset units. type(uint256).max = unlimited.
+    /// @dev 3-C: bounds TVL for thin-exit-liquidity strategies (e.g. BNB). Gates deposits/
+    ///      mints only via maxDeposit/maxMint; withdrawals are unaffected (ADR-007 liveness).
+    ///      Setting a cap below current totalAssets() does not force redemptions — it simply
+    ///      blocks further deposits until TVL falls back below the cap.
+    function setDepositCap(uint256 newCap) external override onlyGovernance {
+        emit DepositCapUpdated(depositCap, newCap);
+        depositCap = newCap;
     }
 
     // =========================================

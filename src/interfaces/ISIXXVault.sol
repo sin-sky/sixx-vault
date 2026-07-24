@@ -33,6 +33,12 @@ interface ISIXXVault is IERC4626 {
     /// @notice Update the lock period (governance only)
     function setLockPeriod(uint256 newPeriod) external;
 
+    /// @notice Current deposit cap in underlying asset units (type(uint256).max = unlimited)
+    function depositCap() external view returns (uint256);
+
+    /// @notice Set the deposit cap in underlying asset units (governance only). 3-C: bounds TVL.
+    function setDepositCap(uint256 newCap) external;
+
     // =========================================
     // Fees
     // =========================================
@@ -101,6 +107,7 @@ interface ISIXXVault is IERC4626 {
 
     event AdapterUpdated(address indexed oldAdapter, address indexed newAdapter);
     event LockPeriodUpdated(uint256 oldPeriod, uint256 newPeriod);
+    event DepositCapUpdated(uint256 oldCap, uint256 newCap);
     event EmergencyShutdown(bool active);
     event FeeCollected(address indexed recipient, uint256 feeShares, uint256 feeAssets);
     event GovernanceProposed(address indexed currentGovernance, address indexed pendingGovernance);

@@ -48,11 +48,13 @@ contract SIXXVault is ERC4626, ReentrancyGuard, ISIXXVault {
     bool public override emergencyShutdown;
 
     /// @dev 3-C: optional on-chain deposit cap, denominated in underlying asset units,
-    ///      to bound the TVL routed into thin-exit-liquidity strategies (e.g. BNB via
-    ///      Lista slisBNB, whose deepest exit venue is ~$2.5M). Defaults to
-    ///      type(uint256).max (= unlimited, preserving the pre-existing behavior for
-    ///      all other vaults). Gates deposits/mints only; withdrawals are never blocked
-    ///      (ADR-007 liveness preserved).
+    ///      to bound the deposit-driven TVL routed into thin-exit-liquidity strategies
+    ///      (e.g. BNB via Lista slisBNB, whose deepest exit venue is ~$2.5M). Defaults to
+    ///      type(uint256).max (= unlimited, preserving the pre-existing behavior for all
+    ///      other vaults). Gates deposits/mints against totalAssets() only; it is NOT a
+    ///      hard balance ceiling — harvested yield or direct token donations can push the
+    ///      real balance above the cap without minting shares. Withdrawals are never
+    ///      blocked (ADR-007 liveness preserved).
     uint256 public override depositCap;
 
     /// @dev Amount of assets currently deployed to the active adapter
